@@ -95,7 +95,7 @@ fn main() {
     for curr_timestep in tqdm(0..N_ITERATIONS) {
         // Write down calculations
         // Only write down particle position such that every frame is 1/60th of a second
-        if (curr_timestep % (0.016 / DELTA_T).round() as usize == 0) {
+        if curr_timestep % (0.016 / DELTA_T).round() as usize == 0 {
             sim.add_particle_pos(&PARTICLES);
         }
         
@@ -295,6 +295,6 @@ fn main() {
         // println!("Particle 50 fp: {:?}", PARTICLES[50].fp);
 
     }
-
+    sim.num_iterations = sim.particle_positions.len();
     std::fs::write("sim.json", serde_json::to_string_pretty(&sim).unwrap()).unwrap();
 }

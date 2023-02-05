@@ -10,8 +10,8 @@ pub struct Simulation {
     grid_spacing: f64,
     delta_t: f64,
     num_particles: usize,
-    num_iterations: usize,
-    particle_positions: Vec<Vec<[f64; 2]>>,
+    pub num_iterations: usize,
+    pub particle_positions: Vec<Vec<[f64; 2]>>,
 }
 
 impl Simulation {
