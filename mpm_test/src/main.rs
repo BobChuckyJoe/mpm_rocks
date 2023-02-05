@@ -15,7 +15,7 @@ const GRID_LENGTH: usize = 1000; // The size of the grid in # of cells
 const GRID_SPACING: f64 = BOX_SIZE / GRID_LENGTH as f64; // The spacing between cells in meters
 const DELTA_T: f64 = 0.001 ; // Time step in seconds
 const N_PARTICLES: usize = 128;
-const N_ITERATIONS: usize = 2000;
+const N_ITERATIONS: usize = 20000;
 
 // // Constituency model parameters from paper
 // // TODO This is in 2D so maybe the dimensions aren't right...
@@ -94,9 +94,11 @@ fn main() {
     // Main iteration loop
     for curr_timestep in tqdm(0..N_ITERATIONS) {
         // Write down calculations
-        // Last iteration is wasted but I would like to see the initial particle positions
-        sim.add_particle_pos(&PARTICLES);
-
+        // Only write down particle position such that every frame is 1/60th of a second
+        if (curr_timestep % (0.016 / DELTA_T).round() as usize == 0) {
+            sim.add_particle_pos(&PARTICLES);
+        }
+        
         // Clear grid
         for x in 0..GRID_LENGTH {
             for y in 0..GRID_LENGTH {
@@ -290,7 +292,7 @@ fn main() {
         }
         // Keep track of particle deformation gradient
         // println!("Particle 50 fe: {:?}", PARTICLES[50].fe);
-        println!("Particle 50 fp: {:?}", PARTICLES[50].fp);
+        // println!("Particle 50 fp: {:?}", PARTICLES[50].fp);
 
     }
 
