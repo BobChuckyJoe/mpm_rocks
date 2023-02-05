@@ -1,8 +1,11 @@
 import bpy
 import json
+import os
+from pathlib import Path
+home = str(Path.home())
 import time
 
-with open("C:/Users/bobch/Downloads/sim.json") as f:
+with open(os.path.join(home, "Downloads/sim.json")) as f:
     stuff = json.load(f)
 
 box_size = stuff["box_size"]
@@ -30,6 +33,9 @@ print(f"Num iterations: {num_iterations}")
 print(f"Num particles: {num_particles}")
 # Do the animation by setting the particle positions
 for t in range(num_iterations):
+    # Skip frames such that it's only 60 fps
+    # TODO
+
     curr_time_pos = particle_positions[t]
     for i in range(num_particles):
         if i == 0:
