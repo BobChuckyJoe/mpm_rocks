@@ -1,7 +1,5 @@
 use nalgebra::{Vector2, Matrix2};
 
-use crate::{GRID_LENGTH, GRID_SPACING};
-
 #[derive(Copy, Clone)]
 pub struct Particle {
     pub position: Vector2<f64>,

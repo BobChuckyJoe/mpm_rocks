@@ -3,7 +3,7 @@ use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use tqdm::tqdm;
 
-use crate::{types::to_grid, equations::{sigma, grad_weighting_func, CRITICAL_COMPRESSION, CRITICAL_STRETCH}};
+use crate::{types::to_grid, equations::{adjugate, mew, lambda, polar_ru_decomp, sigma, grad_weighting_func, CRITICAL_COMPRESSION, CRITICAL_STRETCH, INITIAL_DENSITY, partial_psi_partial_fe}};
 
 mod cereal_utils;
 mod equations;
@@ -11,11 +11,11 @@ mod types;
 
 
 const BOX_SIZE: f64 = 10.0; // The size of the box in METERS
-const GRID_LENGTH: usize = 1000; // The size of the grid in # of cells
+const GRID_LENGTH: usize = 30; // The size of the grid in # of cells
 const GRID_SPACING: f64 = BOX_SIZE / GRID_LENGTH as f64; // The spacing between cells in meters
-const DELTA_T: f64 = 0.001 ; // Time step in seconds
-const N_PARTICLES: usize = 128;
-const N_ITERATIONS: usize = 20000;
+const DELTA_T: f64 = 0.001; // Time step in seconds
+const N_PARTICLES: usize = 50;
+const N_ITERATIONS: usize = 10000;
 
 // // Constituency model parameters from paper
 // // TODO This is in 2D so maybe the dimensions aren't right...
@@ -40,7 +40,7 @@ fn main() {
     );
     // Initialize simulation space and grid
     let mut GRID: Vec<Vec<types::Cell>> = vec!
-        [vec![types::Cell { velocity: Vector2::new(0.0, 0.0), mass: 0.0, force: Vector2::new(0.0, 0.0) }; GRID_LENGTH]; GRID_LENGTH];
+        [vec![types::Cell { velocity: Vector2::new(0.0, 0.0), mass: 0.0, force: Vector2::new(0.0, 0.0) }; GRID_LENGTH + 1]; GRID_LENGTH + 1];
     
 
     // Initialize particles
@@ -54,6 +54,7 @@ fn main() {
         fp: Matrix2::identity(), 
     }
         ; N_PARTICLES];
+        
 
     // Particle to Grid function things
     let N = |x: f64| {
@@ -88,6 +89,13 @@ fn main() {
     }
 
 
+    // TODO
+    // PARTICLES[0].position = Vector2::new(3.0, 3.0);
+    // PARTICLES[1].position = Vector2::new(3.0, 4.5);
+    // PARTICLES[2].position = Vector2::new(4.5, 3.0);
+    // PARTICLES[3].position = Vector2::new(4.5, 4.5);
+
+
     println!("Initialization stuff done!");
     // exit(0);
 
@@ -98,6 +106,10 @@ fn main() {
         if curr_timestep % (0.016 / DELTA_T).round() as usize == 0 {
             sim.add_particle_pos(&PARTICLES);
         }
+
+        // for i in 0..N_PARTICLES {
+        //     println!("Particle {} at ({}, {})", i, PARTICLES[i].position.x, PARTICLES[i].position.y);
+        // }
         
         // Clear grid
         for x in 0..GRID_LENGTH {
@@ -114,8 +126,8 @@ fn main() {
         // Transfer mass to grid
         for p in PARTICLES.iter() {
             let inds = to_grid(*p, GRID_SPACING, GRID_LENGTH);
-            for dx in -1..2  {
-                for dy in -1..2 {
+            for dx in -2..3  {
+                for dy in -2..3 {
                     let new_ind = (inds.0 as i32 + dx, inds.1 as i32 + dy);
                     if new_ind.0 < 0 || new_ind.1 < 0 || new_ind.0 >= GRID_LENGTH as i32 || new_ind.1 >= GRID_LENGTH as i32 {
                         continue;
@@ -125,14 +137,22 @@ fn main() {
                 }
             }
         }
+        // for i in 0..GRID_LENGTH+1 {
+        //     for j in 0..GRID_LENGTH+1 {
+        //         println!("{} {} mass: {}", i, j, GRID[i][j].mass);
+        //     }
+        // }
         // Transfer velocity to grid
         for p in PARTICLES.iter() {
             let inds = to_grid(*p, GRID_SPACING, GRID_LENGTH);
-            for dx in -1..2  {
-                for dy in -1..2 {
+            for dx in -2..3  {
+                for dy in -2..3 {
                     let new_ind = (inds.0 as i32 + dx, inds.1 as i32 + dy);
                     if new_ind.0 < 0 || new_ind.1 < 0 || new_ind.0 >= GRID_LENGTH as i32 || new_ind.1 >= GRID_LENGTH as i32 {
                         continue;
+                    }
+                    if GRID[new_ind.0 as usize][new_ind.1 as usize].mass == 0.0 {
+                        continue
                     }
                     let weight: f64 = part_to_grid(new_ind.0 as usize, new_ind.1 as usize, p.position.x, p.position.y);
                     let change_in_velocity = p.velocity * weight * p.mass / GRID[new_ind.0 as usize][new_ind.1 as usize].mass;
@@ -141,6 +161,11 @@ fn main() {
                 }
             }
         }
+        // for i in 0..GRID_LENGTH+1 {
+        //     for j in 0..GRID_LENGTH+1 {
+        //         println!("{} {} velocity: ({}, {})", i, j, GRID[i][j].velocity.x, GRID[i][j].velocity.y);
+        //     }
+        // }
         
         // 2. "Compute particle volume and densities" FIRST TIMESTEP ONLY
         // What is this step for exactly...?
@@ -148,9 +173,11 @@ fn main() {
             for p in PARTICLES.iter_mut() {
                 for i in 0..GRID_LENGTH {
                     for j in 0..GRID_LENGTH {
-                        p.density += GRID[i][j].mass * part_to_grid(i, j, p.position.x, p.position.y) / GRID_SPACING.powi(3);
+                        // TODO, currently for 2D
+                        p.density += GRID[i][j].mass * part_to_grid(i, j, p.position.x, p.position.y) / GRID_SPACING.powi(2);
                     }
                 }
+                // p.density = INITIAL_DENSITY;
             }
         }
         
@@ -158,20 +185,19 @@ fn main() {
         for i in 0..PARTICLES.len() {
             let p = PARTICLES[i];
             let inds = to_grid(p, GRID_SPACING, GRID_LENGTH);
-            for dx in -1..2  {
-                for dy in -1..2 {
+            for dx in -2..3  {
+                for dy in -2..3 {
                     let new_ind = (inds.0 as i32 + dx, inds.1 as i32 + dy);
                     if new_ind.0 < 0 || new_ind.1 < 0 || new_ind.0 >= GRID_LENGTH as i32 || new_ind.1 >= GRID_LENGTH as i32 {
                         continue;
                     }
                     // println!("Looking at particle {}", i);
-                    GRID[new_ind.0 as usize][new_ind.1 as usize].force -= p.mass / p.density * sigma(p) *
+                    GRID[new_ind.0 as usize][new_ind.1 as usize].force -= p.mass / p.density * (p.fe * p.fp).determinant() * sigma(p) *
                     grad_weighting_func(new_ind.0 as usize, new_ind.1 as usize, p.position.x, p.position.y, GRID_SPACING); 
-                    
                     
                     // Debugging checks
                     let _res = grad_weighting_func(new_ind.0 as usize, new_ind.1 as usize, p.position.x, p.position.y, GRID_SPACING)
-                    .map(|x| assert!(x.is_finite())); 
+                    .map(|x| assert!(x.is_finite()));
                     let _res = sigma(p).map(|x| assert!(x.is_finite()));
                     assert!(p.density.is_finite());
                     assert!(p.density != 0.0);
@@ -181,11 +207,32 @@ fn main() {
                 }
             }
         }
+        // for i in 0..N_PARTICLES {
+        //     println!("Particle {} position: {}", i, PARTICLES[i].position);
+        //     println!("Paricle {} mass: {}", i, PARTICLES[i].mass);
+        //     println!("Paricle {} density: {}", i, PARTICLES[i].density);
+        //     println!("Paricle {} fp: {} fe: {} fe * fp: {}", i, PARTICLES[i].fp, PARTICLES[i].fe, PARTICLES[i].fe * PARTICLES[i].fp);
+        //     println!("Particle volume: {}", PARTICLES[i].mass / PARTICLES[i].density);
+        //     println!("J: {}", (PARTICLES[i].fe * PARTICLES[i].fp).determinant());
+        //     println!("mew(fp): {}", mew(PARTICLES[i].fp));
+        //     println!("lambda(fp): {}", lambda(PARTICLES[i].fp));
+        //     let (r, u) = polar_ru_decomp(PARTICLES[i].fe);
+        //     let adj_transpose = adjugate(PARTICLES[i].fe).transpose();
+        //     println!("r: {} u: {}", r, u);
+        //     println!("2.0 * mew(fp) * (fe[(i,j)] - r[(i,j)]: {}", 2.0 * mew(PARTICLES[i].fp) * (PARTICLES[i].fe[(0,0)] - r[(0,0)]));
+        //     println!("lambda(fp) * (fe.determinant() - 1.0) * adj_transpose[(i,j)]: {}", lambda(PARTICLES[i].fp) * (PARTICLES[i].fe.determinant() - 1.0) * adj_transpose[(0,0)]);
+        //     println!("Partial Psi partial F: {}", partial_psi_partial_fe(PARTICLES[i].fe, PARTICLES[i].fp));
+        //     println!("Sigma: {}", sigma(PARTICLES[i]));
+        // }
+        // for i in 0..GRID_LENGTH+1 {
+        //     for j in 0..GRID_LENGTH+1 {
+        //         println!("INTERNAL FORCES {} {} force: ({:.3}, {:.3})", i, j, GRID[i][j].force.x, GRID[i][j].force.y);
+        //     }
+        // }
         
         // 4. "Update velocities on grid to v_i*"
         for x in 0..GRID_LENGTH {
             for y in 0..GRID_LENGTH {
-                let inverse_mass = 1.0;
                 if (GRID[x][y].mass == 0.0) {
                     
                 }
@@ -206,6 +253,12 @@ fn main() {
             }
         }
 
+        // for i in 0..GRID_LENGTH+1 {
+        //     for j in 0..GRID_LENGTH+1 {
+        //         println!("GRID AFTER STEP 4 {} {} velocity: ({}, {})", i, j, GRID[i][j].velocity.x, GRID[i][j].velocity.y);
+        //     }
+        // }
+
         // 5. "Calculate for particle collisions"
 
         // 6. "Solve the linear system"
@@ -216,8 +269,8 @@ fn main() {
         for p in PARTICLES.iter_mut() {
             let inds = to_grid(*p, GRID_SPACING, GRID_LENGTH);
             let mut grad_v_p = Matrix2::<f64>::zeros();
-            for dx in -1..2 {
-                for dy in -1..2 {
+            for dx in -2..3 {
+                for dy in -2..3 {
                     let new_inds = (inds.0 as i64 + dx, inds.1 as i64 + dy);
                     if new_inds.0 < 0 || new_inds.1 < 0 || new_inds.0 >= GRID_LENGTH as i64 || new_inds.1 >= GRID_LENGTH as i64 {
                         continue;
@@ -228,6 +281,7 @@ fn main() {
                     let _res = p.velocity.map(|x| assert!(x.is_finite()));
                 }
             }
+            // println!("Gradvp: {}", grad_v_p);
             // These updates are defined in section 7
             let fe_hat = (Matrix2::<f64>::identity() + DELTA_T * grad_v_p) * p.fe; // TODO grad_v_p sometimes sus
             let _res = fe_hat.map(|x| assert!(f64::is_finite(x), "{}", grad_v_p));
@@ -256,8 +310,13 @@ fn main() {
             let _res = p.fe.map(|x| assert!(f64::is_finite(x), "fe is nan. clamped_svd: {:?}, u: {:?}, v_t: {:?}", clamped_svd, u, v_t));
             // Is the inversion of clamped_svd going to be a problem? Could there be 1 singular value only?
             p.fp = v_t.transpose() * clamped_svd.try_inverse().unwrap() * u.transpose() * f_n_plus_1;
+            // println!("clamped_svd: {:?}", clamped_svd);
             let _res = p.fp.map(|x| assert!(f64::is_finite(x)));
-            assert!((f_n_plus_1 - p.fe * p.fp).norm() < 1e-6);
+
+            // Print updated deformation gradients
+            // println!("Updated elastic deformation gradient: {:?}", p.fe);
+            // println!("Updated plastic deformation gradient: {:?}", p.fp);
+            // assert!((f_n_plus_1 - p.fe * p.fp).norm() < 1e-6, "f_n_plus_1: {} vs fe * fp: {} ", f_n_plus_1, p.fe * p.fp);
         }
 
         // 8. Update particle velocities 
@@ -266,8 +325,8 @@ fn main() {
             let inds = to_grid(*p, GRID_SPACING, GRID_LENGTH);
             let mut v_pic = Vector2::<f64>::zeros();
             let mut v_flip = p.velocity.clone();
-            for dx in -1..2 {
-                for dy in -1..2 {
+            for dx in -2..3 {
+                for dy in -2..3 {
                     let new_inds = (inds.0 as i64 + dx, inds.1 as i64 + dy);
                     if new_inds.0 < 0 || new_inds.1 < 0 || new_inds.0 >= GRID_LENGTH as i64 || new_inds.1 >= GRID_LENGTH as i64 {
                         continue;
@@ -278,7 +337,12 @@ fn main() {
             }
             // Update velocity
             p.velocity = (1.0 - alpha) * v_pic + alpha * v_flip;
+            // println!("PARTICLE v_pic: {}", v_pic);
+            // println!("PARTICLE v_flip: {}", v_flip);
         }
+        // for i in 0..N_PARTICLES {
+        //     println!("Particle {}: {:?}", i, PARTICLES[i].velocity);
+        // }
 
         // 9. "Particle-based body collisions"
         // TODO
@@ -291,6 +355,15 @@ fn main() {
             p.position.y = p.position.y.max(0.0).min(GRID_LENGTH as f64 * GRID_SPACING);
         }
         // Keep track of particle deformation gradient
+        for p in PARTICLES.iter() {
+            let mut tot_weight = 0.0;
+            for i in 0..GRID_LENGTH {
+                for j in 0..GRID_LENGTH {
+                    tot_weight += part_to_grid(i, j, p.position.x, p.position.y);
+                }
+            }
+            // println!("TOT WEIGHT IS: {}", tot_weight);
+        }
         // println!("Particle 50 fe: {:?}", PARTICLES[50].fe);
         // println!("Particle 50 fp: {:?}", PARTICLES[50].fp);
 

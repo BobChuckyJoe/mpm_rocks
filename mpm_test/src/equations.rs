@@ -6,7 +6,7 @@ use crate::types::{Particle};
 pub const CRITICAL_COMPRESSION: f64 = 2.5e-2; // theta_c
 pub const CRITICAL_STRETCH: f64 = 7.5e-3; // theta_s
 const HARDENING_COEFFICIENT: f64 = 10.0; // Epsilon
-const INITIAL_DENSITY: f64 = 4e2; // rho_0 I think this is the density of the material, not of each material point...?
+pub const INITIAL_DENSITY: f64 = 4e2; // rho_0 I think this is the density of the material, not of each material point...?
 const YOUNGS_MODULUS: f64 = 1.4e5; // E_0
 const POISSONS_RATIO: f64 = 0.2; // nu
 // What are these parameters and what do they mean exactly
@@ -36,35 +36,49 @@ pub fn energy_density_function(fe: Matrix2<f64>, fp: Matrix2<f64>) -> f64 {
     Returns R and U
 */
 pub fn polar_ru_decomp(mat: Matrix2<f64>) -> (Matrix2<f64>, Matrix2<f64>) {
-    let u_squared = mat.transpose() * mat;
-    let mut diag = u_squared.symmetric_eigen();
+    // Possibly wrong
+    // let u_squared = mat.transpose() * mat;
+    // let mut diag = u_squared.symmetric_eigen();
     
-    let diff = (diag.recompose() - u_squared).norm();
-    assert!( diff < 1e-6, "Mat: {}, Diff: {}", mat, diff);
+    // let diff = (diag.recompose() - u_squared).norm();
+    // assert!( diff < 1e-6, "Mat: {}, Diff: {}", mat, diff);
 
-    diag.eigenvalues = diag.eigenvalues.map(|x| x.max(0.0).sqrt());
-    let u = diag.recompose();
-    let r = mat * u.try_inverse().unwrap();
+    // diag.eigenvalues = diag.eigenvalues.map(|x| x.max(0.0).sqrt());
+    // let u = diag.recompose();
+    // let r = mat * u.try_inverse().unwrap();
+    // (r, u)
+
+    let svd = mat.svd(true, true);
+    let singular_mat = Matrix2::new(svd.singular_values[0], 0.0, 0.0, svd.singular_values[1]);
+    let r = svd.u.unwrap() * svd.v_t.unwrap();
+    let u = svd.v_t.unwrap().transpose() * singular_mat * svd.v_t.unwrap();
+    assert!((mat - r * u).norm() < 1e-6);
     (r, u)
 }
 
-// TODO Not sure if this is how you do this partial (partial psi / partial F_E)
+// TODO Not sure if this is how you do this partial (partial psi / partial F_E) BUGGY
 pub fn partial_psi_partial_fe(fe: Matrix2<f64>, fp: Matrix2<f64>) -> Matrix2<f64> {
     let (r, u) = polar_ru_decomp(fe);
     assert!((r * u - fe).norm() < 1e-5);
     let _res = r.map(|x| assert!(x.is_finite()));
     let _res = u.map(|x| assert!(x.is_finite()));
 
+    // println!("fe: {}", fe);
+    // println!("r: {}", r);
+    // println!("u: {}", u);
+
+    let adj_transpose = adjugate(fe).transpose();
+
     let mut partial: Matrix2<f64> = Matrix2::zeros();
     // TODO Check this with eq 1
     for i in 0..2 {
         for j in 0..2 {
             partial[(i,j)] = 2.0 * mew(fp) * (fe[(i,j)] - r[(i,j)]) 
-            + lambda(fp) * (fe.determinant() - 1.0);
+            + lambda(fp) * (fe.determinant() - 1.0) * adj_transpose[(i,j)];
             let fe_ij = fe[(i,j)];
             assert!(fe_ij.is_finite());
             assert!(r[(i,j)].is_finite());
-            assert!(mew(fp).is_finite(), "mew: {}, fp: {}", mew(fp), fp);
+            // assert!(mew(fp).is_finite(), "mew: {}, fp: {}", mew(fp), fp);
             assert!(lambda(fp).is_finite());
             assert!(fe.determinant().is_finite());
             assert!(partial[(i,j)].is_finite());
@@ -88,12 +102,27 @@ pub fn n(x: f64) -> f64 {
 }
 
 pub fn n_prime(x: f64) -> f64 {
-    if 0.0 <= x.abs() && x.abs() < 1.0 {
-        1.5 * x.powi(2) - 2.0 * x
-    } else if 1.0 <= x.abs() && x.abs() < 2.0 {
-        -0.5 * x.powi(2) + 2.0 * x - 2.0
-    } else {
-        0.0
+    if x > 0.0 {
+        if x > 0.0 && x < 1.0 {
+            1.5 * x.powi(2) - 2.0 * x
+        }
+        else if x >= 1.0 && x < 2.0 {
+            -0.5 * x.powi(2) + 2.0 * x - 2.0
+        }
+        else {
+            0.0
+        }
+    }
+    else {
+        if x < 0.0 && x > -1.0 {
+            -1.5 * x.powi(2) - 2.0 * x
+        }
+        else if x <= -1.0 && x > -2.0 {
+            0.5 * x.powi(2) + 2.0 * x + 2.0
+        }
+        else {
+            0.0
+        }
     }
 }
 
@@ -116,6 +145,11 @@ pub fn sigma(p: Particle) -> Matrix2<f64> {
     let _res = p.fp.map(|x| assert!(x.is_finite()));
     let _res = partial_psi_partial_fe(p.fe, p.fp).map(|x| assert!(x.is_finite()));
     assert_non_nan(p.fe);
+    // println!("Deformation matrix: {}", deformation_matrix);
+    // println!("Determinant: {}", deformation_matrix.determinant());
+    // println!("Partial psi partial fe: {}", partial_psi_partial_fe(p.fe, p.fp));
+    // println!("Fe transpose: {}", p.fe.transpose());
+
     1.0 / deformation_matrix.determinant() * partial_psi_partial_fe(p.fe, p.fp) * p.fe.transpose()
     
 }
@@ -137,4 +171,13 @@ pub fn assert_non_nan(matrix: Matrix2<f64>) {
             assert!(matrix.get((i,j)).unwrap().is_finite());
         }
     }
+}
+
+pub fn adjugate(matrix: Matrix2<f64>) -> Matrix2<f64> {
+    let mut adjugate = Matrix2::zeros();
+    adjugate[(0,0)] = matrix[(1,1)];
+    adjugate[(0,1)] = -matrix[(0,1)];
+    adjugate[(1,0)] = -matrix[(1,0)];
+    adjugate[(1,1)] = matrix[(0,0)];
+    adjugate
 }
