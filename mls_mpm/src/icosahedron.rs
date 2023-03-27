@@ -150,7 +150,7 @@ pub fn create_icosahedron() -> RigidBody {
             let triangle_centroid: Vector3<f64> = (p1 + p2 + p3) / 3.0;
             let derp = triangle_centroid - p2;
             let mut poss_normal: Vector3<f64> = (triangle_centroid - p1).cross(&derp);
-            if (poss_normal.dot(&triangle_centroid) < 0.0) {
+            if poss_normal.dot(&triangle_centroid) < 0.0 {
                 poss_normal *= -1.0;
             }
             rigid_particle_normals.push(poss_normal / poss_normal.norm());
@@ -173,6 +173,7 @@ pub fn create_icosahedron() -> RigidBody {
         rigid_particle_triangles: rigid_particle_triangles,
         rigid_particle_normals: rigid_particle_normals,
         moment_of_inertia: Matrix3::zeros(),
+        obj_file_com: Vector3::<f64>::zeros(),
     };
     let inertial_tensor = calculate_inertia_tensor(&rb);
     rb.moment_of_inertia = inertial_tensor;

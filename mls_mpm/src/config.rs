@@ -2,8 +2,8 @@ pub const SIMULATION_SIZE: f64 = 5.0;
 pub const GRID_LENGTH: usize = 50;
 pub const GRID_SPACING: f64 = SIMULATION_SIZE / GRID_LENGTH as f64;
 pub const DELTA_T: f64 = 0.001;
-pub const N_PARTICLES: usize = 100;
-pub const N_INTERATIONS: usize = 10000;
+pub const N_PARTICLES: usize = 4;
+pub const N_ITERATIONS: usize = 3;
 pub const BOUNDARY: f64 = 0.05; // Particles this close to the boundary have their velocities zeroed out
 
 //  Values from the 2013 snow paper

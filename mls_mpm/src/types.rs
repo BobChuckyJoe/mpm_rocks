@@ -56,13 +56,14 @@ pub struct RigidBody {
     pub mass: f64,
     // Mesh data
     pub vertices: Vec<Vector3<f64>>,
-    pub faces: Vec<(usize, usize, usize)>, // Indices of the vertices
+    pub faces: Vec<(usize, usize, usize)>, // Triangles made up of indices of the vertices
     pub vertex_normals: Vec<Vector3<f64>>, // Per vertex normals
     pub moment_of_inertia: Matrix3<f64>,
+    pub obj_file_com: Vector3<f64>,
 
     // The particles will be in the material frame
     pub rigid_particle_positions: Vec<Vector3<f64>>, // TODO should i use particles or should i just use positions...?
-    pub rigid_particle_triangles: Vec<usize>, // Corresponding triangles for each particle. Indexes into the rig
+    pub rigid_particle_triangles: Vec<usize>, // Corresponding triangles for each particle. Indexes into the vertices field
     pub rigid_particle_normals: Vec<Vector3<f64>>, // Corresponding normals for each triangle
 }
 

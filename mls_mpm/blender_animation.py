@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 home = str(Path.home())
 import time
+from mathutils import Quaternion
 
 with open(os.path.join(home, "Downloads/sim.json")) as f:
     stuff = json.load(f)
@@ -15,19 +16,25 @@ delta_t = stuff["delta_t"]
 num_particles = stuff["num_particles"]
 num_iterations = stuff["num_iterations"]
 particle_positions = stuff["particle_positions"]
+# Rigid body stuff
+rigid_body_positions = stuff["rigid_body_positions"]
+rigid_body_orientations = stuff["rigid_body_orientations"]
+rigid_body_velocities = stuff["rigid_body_velocities"]
+rigid_body_omegas = stuff["rigid_body_angular_velocities"]
+obj_file_com = stuff["obj_file_com"]
 
-# Select all the spheres and delete them from earlier runs
-#for o in bpy.context.scene.objects:
-#    if o.type == 'MESH':
-#        o.delete()
-
-# Call the operator only once
-# bpy.ops.object.delete()
-
-# Each represents a particle
-for _ in range(num_particles):
-    mesh = bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, location=(0,0,0), scale=(0.05,0.05,0.05))
-        
+rigid_body = bpy.data.objects["rigid_body"]
+def init():
+    # Each represents a particle
+    for _ in range(num_particles):
+        mesh = bpy.ops.mesh.primitive_uv_sphere_add(radius=1, enter_editmode=False, location=(0,0,0), scale=(0.05,0.05,0.05))
+    # TODO For now, just manually load the rigid body with the name "rigid_body"
+    # Set the origin of the rigid_body
+    bpy.context.scene.cursor.location = obj_file_com
+    rigid_body.origin_set(type='ORIGIN_CURSOR', center="MEDIAN")
+    # Set rotation mode to quaternion
+    rigid_body.rotation_mode = 'QUATERNION'
+init()
 
 print(f"Num iterations: {num_iterations}")
 print(f"Num particles: {num_particles}")
@@ -49,5 +56,11 @@ for t in range(num_iterations):
         s.location.z = z
         
         s.keyframe_insert(data_path="location", frame=t)
+    curr_time_rigid_body_pos = rigid_body_positions[t]
+    curr_time_rigid_body_orientation = rigid_body_orientations[t]
+    rigid_body.location = curr_time_rigid_body_pos
+    rigid_body.rotation_quaternion = curr_time_rigid_body_orientation
+    rigid_body.keyframe_insert(data_path="location", frame=t)
+    rigid_body.keyframe_insert(data_path="rotation_quaternion", frame=t)
     
 print("Done!")

@@ -1,7 +1,7 @@
-use nalgebra::{Matrix3, Vector3};
+use nalgebra::{Matrix3, Vector3, UnitQuaternion, Quaternion};
 use rand::Rng;
 
-use crate::config::{GRID_SPACING, LAMBDA_0, MU_0};
+use crate::config::{GRID_SPACING, LAMBDA_0, MU_0, DELTA_T};
 use crate::types::{BoundaryCondition, RigidBody};
 
 pub fn get_base_grid_ind(p: &Vector3<f64>, grid_spacing: f64) -> (usize, usize, usize) {
@@ -116,11 +116,11 @@ pub fn partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> Matrix3<f64>
 }
 
 pub fn convert_to_world_coords(rb: &RigidBody, particle_pos: Vector3<f64>) -> Vector3<f64> {
-    rb.orientation * particle_pos + rb.position
+    rb.orientation.to_rotation_matrix() * particle_pos + rb.position
 }
 
 pub fn convert_world_coords_to_local(rb: &RigidBody, world_pos: Vector3<f64>) -> Vector3<f64> {
-    rb.orientation.inverse() * (world_pos - rb.position)
+    rb.orientation.inverse().to_rotation_matrix() * (world_pos - rb.position)
 }
 
 pub fn convert_direction_to_world_coords(
@@ -315,4 +315,20 @@ pub fn generate_random_point_on_triangle(
     }
     let w = u1 * a + u2 * b;
     w + p1
+}
+
+
+pub fn update_orientation(old_q: UnitQuaternion<f64>, omega: Vector3<f64>) -> UnitQuaternion<f64> {
+    let omega = omega * DELTA_T;
+    if omega.norm() == 0.0 {
+        return old_q;
+    }
+    let rest = omega / omega.norm() * (omega.norm() / 2.0).sin();
+    let q = UnitQuaternion::from_quaternion(Quaternion::new(
+        (0.5 * omega.norm()).cos(),
+        rest.x,
+        rest.y,
+        rest.z,
+    ));
+    q * old_q
 }

@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 /// Random helper functions for math things
-use nalgebra::{Matrix3, Vector3};
+use nalgebra::{Matrix3, Vector3, UnitQuaternion};
 
 use crate::config::GRID_LENGTH;
 
@@ -64,4 +62,11 @@ pub fn is_point_in_triangle(
         return false;
     }
     true
+}
+
+pub fn vector3_to_array(v: Vector3<f64>) -> [f64; 3] {
+    [v.x, v.y, v.z]
+}
+pub fn quaternion_to_array(q: UnitQuaternion<f64>) -> [f64; 4] {
+    [q.i, q.j, q.k, q.w]
 }
