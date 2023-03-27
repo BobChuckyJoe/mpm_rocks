@@ -1,0 +1,17 @@
+[package]
+name = "mls_mpm"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nalgebra = "0.32.1"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+serde = "1.0.152"
+serde_derive = "1.0.152"
+serde_json = "1.0.93"
+tobj = "3.2.4"
+tqdm = "0.4.4"
+obj-rs = "0.6"
