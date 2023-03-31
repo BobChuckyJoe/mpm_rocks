@@ -31,7 +31,7 @@ impl Gridcell {
             velocity: Vector3::zeros(),
             mass: 0.0,
             force: Vector3::zeros(),
-            unsigned_distance: 0.0,
+            unsigned_distance: 1000000.0,
             rigid_particle_index: -1,
             distance_sign: 0,
         }
@@ -41,7 +41,7 @@ impl Gridcell {
         self.velocity.scale_mut(0.0);
         self.mass = 0.0;
         self.force.scale_mut(0.0);
-        self.unsigned_distance = 0.0;
+        self.unsigned_distance = 1000000.0; // Because, we're doing a min operation, this should be large at first
         self.distance_sign = 0;
     }
 }
@@ -52,13 +52,14 @@ pub struct RigidBody {
     pub velocity: Vector3<f64>,
     // These are in material coords
     pub orientation: UnitQuaternion<f64>, // Rotation matrix. Should I use quaternions?
-    pub omega: Vector3<f64>,              // Angular velocity
+    pub angular_momentum: Vector3<f64>, // Angular MOMENTUM
     pub mass: f64,
+    pub inertia_tensor: Matrix3<f64>, // Also in material coords
+    
     // Mesh data
     pub vertices: Vec<Vector3<f64>>,
     pub faces: Vec<(usize, usize, usize)>, // Triangles made up of indices of the vertices
     pub vertex_normals: Vec<Vector3<f64>>, // Per vertex normals
-    pub moment_of_inertia: Matrix3<f64>,
     pub obj_file_com: Vector3<f64>,
 
     // The particles will be in the material frame

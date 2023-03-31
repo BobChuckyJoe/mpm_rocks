@@ -134,9 +134,18 @@ pub fn convert_world_direction_to_local(rb: &RigidBody, world_dir: Vector3<f64>)
     rb.orientation.inverse() * world_dir
 }
 
+pub fn get_inertia_tensor_world(rb: &RigidBody) -> Matrix3<f64> {
+    rb.orientation.to_rotation_matrix() * rb.inertia_tensor * rb.orientation.to_rotation_matrix().inverse()
+}
+
+pub fn get_omega(rb: &RigidBody) -> Vector3<f64> {
+    let i_world = get_inertia_tensor_world(rb);
+    i_world.try_inverse().unwrap() * rb.angular_momentum
+}
+
 /// Calculates the velocity of a rigid body at a given point in world coordinates
 pub fn velocity_projection(rb: &RigidBody, point: Vector3<f64>) -> Vector3<f64> {
-    rb.velocity + rb.omega.cross(&(point - rb.position))
+    rb.velocity + get_omega(rb).cross(&(point - rb.position))
 }
 
 /// Used to handle different types of rigid body boundaries
@@ -170,7 +179,7 @@ pub fn proj_r(
         + proj(
             particle_velocity - velocity_projection(rb, grid_cell_world_coords),
             particle_normal,
-            BoundaryCondition::SLIP,
+            BoundaryCondition::STICKY,
             0.05,
         ) // TODO The boundary conditions should be stored in the rigid body. Gonna hard code it for now.
 }

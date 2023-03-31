@@ -19,11 +19,11 @@ use crate::config::{
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
     convert_world_direction_to_local, get_base_grid_ind, grad_weighting_function,
-    grid_cell_ind_to_world_coords, partial_psi_partial_f, proj_r, weighting_function, calculate_center_of_mass, update_orientation,
+    grid_cell_ind_to_world_coords, partial_psi_partial_f, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
 use crate::icosahedron::create_icosahedron;
 use crate::obj_loader::load_rigid_body;
-use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane};
+use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
 use crate::serialize::Simulation;
 use crate::types::{Gridcell, Particle, RigidBody};
 
@@ -47,6 +47,7 @@ fn main() {
         Vec::new(),
         Vec::new(),
         [0.0, 0.0, 0.0],
+        Vec::new(),
     );
     let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(0.5);
     let mut grid: Vec<Vec<Vec<Gridcell>>> =
@@ -84,12 +85,12 @@ fn main() {
         println!("Rigid body position: {:?}", rigid_body.position);
         println!("Rigid body velocity: {:?}", rigid_body.velocity);
         println!("Rigid body orientation: {:?}", rigid_body.orientation);
-        println!("Rigid body angular velocity: {:?}", rigid_body.omega);
-        if iteration_num % (0.04 / DELTA_T) as usize == 0 {
+        println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
+        // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
             // Write the locations every 40 miliseconds, which corresponds to 25 fps
             sim.add_particle_pos(&particles);
             sim.add_rigid_body_stuff(&rigid_body);
-        }
+        // }
         // Reset grid
         for i in 0..GRID_LENGTH {
             for j in 0..GRID_LENGTH {
@@ -212,19 +213,24 @@ fn main() {
                 convert_to_world_coords(&rigid_body, rigid_body.vertices[triangle.1]),
                 convert_to_world_coords(&rigid_body, rigid_body.vertices[triangle.2]),
             );
-            let rp_normal = convert_direction_to_world_coords(
-                &rigid_body,
-                rigid_body.rigid_particle_normals[ind],
-            );
+            // let rp_normal = convert_direction_to_world_coords(
+            //     &rigid_body,
+            //     rigid_body.rigid_particle_normals[ind],
+            // );
+            let rp_normal = calculate_face_normal(p_surface.0, p_surface.1, p_surface.2);
+            assert!(rp_normal.dot(&(p_surface.0 - p_pos)) < 1e-6, "{}", rp_normal.dot(&(p_surface.0 - p_pos)));
+            assert!(is_point_in_triangle(p_pos, p_surface.0, p_surface.1, p_surface.2));
+                
             // calculate minumum distance
-
             let start = get_base_grid_ind(&p_pos, GRID_SPACING);
             for (neighbor_i, neighbor_j, neighbor_k) in iterate_over_3x3(start) {
                 let grid_cell_loc =
                     Vector3::new(neighbor_i as f64, neighbor_j as f64, neighbor_k as f64)
                         * GRID_SPACING;
                 // Check if projection of the grid cell onto the plane is valid (if not valid, skip)
-                let proj = project_point_into_plane(grid_cell_loc, p_pos, rp_normal);
+                let proj = project_point_into_plane(grid_cell_loc, rp_normal, p_pos);
+                // assert!(&(p_surface.1 - p_surface.0).cross(&(p_surface.2 - p_surface.0)).dot(&rp_normal).abs() < &1e-6); // Check if the normal is valid
+                assert!((proj - p_surface.0).dot(&rp_normal).abs() < 1e-6, "dot_prod: {}", (proj - p_surface.0).dot(&rp_normal).abs()); // Check if projection is valid
                 if !is_point_in_triangle(proj, p_surface.0, p_surface.1, p_surface.2) {
                     continue;
                 }
@@ -235,6 +241,9 @@ fn main() {
                     grid_cell_loc.z - p_pos.z,
                 )
                 .norm();
+                if neighbor_i >= GRID_LENGTH || neighbor_j >= GRID_LENGTH || neighbor_k >= GRID_LENGTH {
+                    continue;
+                }
                 if grid[neighbor_i][neighbor_j][neighbor_k].unsigned_distance < dist {
                     continue;
                 }
@@ -250,6 +259,8 @@ fn main() {
                 }
             }
         }
+        sim.add_signed_distance_field(&grid);
+        
         // Calculate particle tags T_{pr}
         // Equation 21 from MLS-MPM paper
         for p in particles.iter_mut() {
@@ -274,6 +285,10 @@ fn main() {
                         let y = y as usize;
                         let z = z as usize;
                         let gridcell = grid[x][y][z];
+                        // There should be no contribution if the grid cell is too far
+                        if gridcell.unsigned_distance >= 2.0 * GRID_SPACING {
+                            continue;
+                        }
                         sum += weighting_function(p.position, (x, y, z))
                             * gridcell.unsigned_distance
                             * gridcell.distance_sign as f64;
@@ -492,14 +507,7 @@ fn main() {
                             // Linear portion ezpz
                             rigid_body.velocity += impulse / rigid_body.mass;
                             
-                            // CHANGE INTO MATERIAL COORDINATES FIRST! Moment of inertia is a 3x3 matrix
-                            // Change omega
-                            let radius_material = convert_world_coords_to_local(
-                                &rigid_body,
-                                grid_cell_ind_to_world_coords(x, y, z),
-                            );
-                            let impulse_material =
-                                convert_world_direction_to_local(&rigid_body, impulse);
+                            let radius = grid_cell_ind_to_world_coords(x, y, z) - rigid_body.position;
                             // println!("rigid_body position {:?}", rigid_body.position);
                             // println!("prev_omega {:?}", rigid_body.omega);
                             // println!("impulse_material {:?}", impulse_material);
@@ -507,8 +515,9 @@ fn main() {
                             // println!("rigid_body_position {:?}", rigid_body.position);
                             // println!("radius_material {:?}", radius_material);
                             // println!("orientation {:?}", rigid_body.orientation);
-                            rigid_body.omega += rigid_body.moment_of_inertia.try_inverse().unwrap()
-                                * radius_material.cross(&impulse_material);
+                            // TODO this is sus
+                            rigid_body.angular_momentum += get_inertia_tensor_world(&rigid_body).try_inverse().unwrap()
+                                * radius.cross(&impulse);
                             // println!("new_omega {:?}", rigid_body.omega);
                         } else {
                             // Compatible
@@ -549,10 +558,9 @@ fn main() {
                 println!("rb_impulse: {:?}", rb_impulse);
                 rigid_body.velocity += rb_impulse / rigid_body.mass;
                 // Angular portion
-                let impulse_location = convert_world_coords_to_local(&rigid_body, p.position);
-                let impulse_direction = convert_world_direction_to_local(&rigid_body, rb_impulse);
-                rigid_body.omega += rigid_body.moment_of_inertia.try_inverse().unwrap()
-                    * impulse_location.cross(&impulse_direction);
+                let radius = p.position - rigid_body.position;
+                rigid_body.angular_momentum += rigid_body.inertia_tensor.try_inverse().unwrap()
+                    * radius.cross(&rb_impulse);
             }
         }
 
@@ -584,7 +592,7 @@ fn main() {
         }
         // Rigid body advection
         rigid_body.position += DELTA_T * rigid_body.velocity;
-        rigid_body.orientation = update_orientation(rigid_body.orientation, rigid_body.omega);
+        rigid_body.orientation = update_orientation(rigid_body.orientation, get_omega(&rigid_body));
     }
     // Since I'm dropping frames, the total number of "iterations" is different. Need to rename
     sim.num_iterations = sim.particle_positions.len();

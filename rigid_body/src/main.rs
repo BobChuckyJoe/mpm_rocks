@@ -6,7 +6,7 @@ use tqdm::tqdm;
 
 const DELTA_T: f64 = 0.001;
 fn main() {
-    let obj_file = "sus_t_handle.obj";
+    let obj_file = "t3.obj";
     let (mut models, materials) =
         tobj::load_obj(obj_file, &tobj::LoadOptions::default()).expect("Failed to load OBJ file");
 
@@ -36,7 +36,7 @@ fn main() {
     println!("Average vertex: {:?}", tot);
 
     // Initial
-    let mut omega = Vector3::<f64>::new(0.5, 0.5, 0.5);
+    let mut omega = Vector3::<f64>::new(0.01, 1.0, 0.01);
     let mut orientation = UnitQuaternion::<f64>::identity();
     let mut position = Vector3::<f64>::zeros(); // Gonna mostly just test rotation around the center of mass
 
@@ -54,8 +54,13 @@ fn main() {
 
     // Calculate inertia tensor
     let inertia_tensor = calculate_inertia_tensor(&mesh);
+    println!("Inertia tensor: {:?}", inertia_tensor);
+    let svd = inertia_tensor.svd(true, true);
+    println!("u: {:?}", svd.u);
+    println!("Inertia tensor eigenvalues: {:?}", inertia_tensor.svd(false, false));
 
     let mut f = File::create("output.txt").unwrap(); // Quaternion at each timestep
+    println!("initial L: {:?}", orientation.to_rotation_matrix() * inertia_tensor * orientation.to_rotation_matrix().transpose() * omega);
     for iteration_num in tqdm(0..100000) {
         // let r = orientation.to_rotation_matrix();
 
@@ -64,8 +69,12 @@ fn main() {
         // let new_r = r_dot * r.matrix();
         // Update
         // orientation = UnitQuaternion::from_matrix(&new_r);
-
-        orientation = calculate_new_quat(orientation, omega);
+        let old_orientation = orientation;
+        let new_orientation = calculate_new_quat(old_orientation, omega);
+        let it = new_orientation.to_rotation_matrix() * inertia_tensor * new_orientation.to_rotation_matrix().inverse();
+        
+        omega = it.try_inverse().unwrap() * (old_orientation.to_rotation_matrix() * inertia_tensor * old_orientation.to_rotation_matrix().transpose()) * omega;
+        orientation = new_orientation;
         if iteration_num % 10 == 0 {
             f.write_all(
                 format!(
@@ -78,6 +87,7 @@ fn main() {
             f.write_all("\n".as_bytes()).unwrap();
         }
     }
+    println!("Final L: {:?}", orientation.to_rotation_matrix() * inertia_tensor * orientation.to_rotation_matrix().transpose() * omega);
 }
 
 pub fn calculate_inertia_tensor(mesh: &Mesh) -> Matrix3<f64> {

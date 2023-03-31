@@ -10,7 +10,7 @@ pub fn iterate_over_3x3(start: (usize, usize, usize)) -> Vec<(usize, usize, usiz
     let (i, j, k) = start;
     for di in -1..2 {
         for dj in -1..2 {
-            for dk in 0..3 {
+            for dk in -1..2 {
                 let new_i = i as i32 + di;
                 let new_j = j as i32 + dj;
                 let new_k = k as i32 + dk;
@@ -69,4 +69,11 @@ pub fn vector3_to_array(v: Vector3<f64>) -> [f64; 3] {
 }
 pub fn quaternion_to_array(q: UnitQuaternion<f64>) -> [f64; 4] {
     [q.i, q.j, q.k, q.w]
+}
+
+/// Assuming the three poitns are in COUNTER-CLOCKWISE order, calculate the normal of a (triangular) face
+pub fn calculate_face_normal(a: Vector3<f64>, b: Vector3<f64>, c: Vector3<f64>) -> Vector3<f64> {
+    let ab = b - a;
+    let ac = c - a;
+    ab.cross(&ac).normalize()
 }

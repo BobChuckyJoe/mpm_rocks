@@ -1,6 +1,6 @@
 use serde_derive::{Deserialize, Serialize};
 
-use crate::{types::{RigidBody,Particle}, math_utils::{quaternion_to_array, vector3_to_array}};
+use crate::{types::{RigidBody,Particle,Gridcell}, math_utils::{quaternion_to_array, vector3_to_array}};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Simulation {
@@ -14,8 +14,9 @@ pub struct Simulation {
     pub rigid_body_positions: Vec<[f64; 3]>,
     pub rigid_body_orientations: Vec<[f64; 4]>,
     pub rigid_body_velocities: Vec<[f64; 3]>,
-    pub rigid_body_omegas: Vec<[f64; 3]>,
+    pub rigid_body_angular_momentums: Vec<[f64; 3]>,
     pub obj_file_com: [f64; 3], // Center of mass of the obj file
+    pub unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>, // At each timestep, the distance of each grid point to the closest rigid body
 }
 
 impl Simulation {
@@ -30,8 +31,9 @@ impl Simulation {
         rigid_body_positions: Vec<[f64; 3]>,
         rigid_body_orientations: Vec<[f64; 4]>,
         rigid_body_velocities: Vec<[f64; 3]>,
-        rigid_body_omegas: Vec<[f64;3]>,
+        rigid_body_angular_momentums: Vec<[f64;3]>,
         obj_file_com: [f64; 3],
+        unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>,
     ) -> Simulation {
         Simulation {
             box_size,
@@ -44,8 +46,9 @@ impl Simulation {
             rigid_body_positions,
             rigid_body_orientations,
             rigid_body_velocities,
-            rigid_body_omegas,
+            rigid_body_angular_momentums,
             obj_file_com,
+            unsigned_distance_field,
         }
     }
 
@@ -60,6 +63,22 @@ impl Simulation {
         self.rigid_body_positions.push(vector3_to_array(rb.position));
         self.rigid_body_orientations.push(quaternion_to_array(rb.orientation));
         self.rigid_body_velocities.push(vector3_to_array(rb.velocity));
-        self.rigid_body_omegas.push(vector3_to_array(rb.omega));
+        self.rigid_body_angular_momentums.push(vector3_to_array(rb.angular_momentum));
+    }
+
+    pub fn add_signed_distance_field(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {
+        let mut to_ret: Vec<Vec<Vec<f64>>> = Vec::new();
+        for i in 0..grid.len() {
+            let mut inner: Vec<Vec<f64>> = Vec::new();
+            for j in 0..grid[i].len() {
+                let mut inner_2: Vec<f64> = Vec::new();
+                for k in 0..grid[i][j].len() {
+                    inner_2.push(grid[i][j][k].unsigned_distance);
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.unsigned_distance_field.push(to_ret);
     }
 }

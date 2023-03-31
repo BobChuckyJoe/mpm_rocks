@@ -164,7 +164,7 @@ pub fn create_icosahedron() -> RigidBody {
         position: Vector3::<f64>::zeros(),
         velocity: Vector3::<f64>::zeros(),
         orientation: UnitQuaternion::<f64>::identity(),
-        omega: Vector3::<f64>::zeros(),
+        angular_momentum: Vector3::<f64>::zeros(),
         mass: mass,
         vertices: vertices,
         vertex_normals: vec![], // TODO
@@ -172,11 +172,11 @@ pub fn create_icosahedron() -> RigidBody {
         rigid_particle_positions: rigid_particle_positions,
         rigid_particle_triangles: rigid_particle_triangles,
         rigid_particle_normals: rigid_particle_normals,
-        moment_of_inertia: Matrix3::zeros(),
+        inertia_tensor: Matrix3::zeros(),
         obj_file_com: Vector3::<f64>::zeros(),
     };
     let inertial_tensor = calculate_inertia_tensor(&rb);
-    rb.moment_of_inertia = inertial_tensor;
+    rb.inertia_tensor = inertial_tensor;
     rb
 }
 
