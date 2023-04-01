@@ -46,5 +46,15 @@ rads= np.array(rads)
 
 ps_cloud.add_scalar_quantity("radii", rads)
 ps_cloud.set_point_radius_quantity("radii")
+
+# Grid velocities
+grid_vels = []
+for i in range(grid_length):
+    for j in range(grid_length):
+        for k in range(grid_length):
+            grid_vels.append(np.array(sim["grid_velocities"][0][i][j][k]))
+grid_vels = np.array(grid_vels)
+ps_cloud.add_vector_quantity("grid_vels", grid_vels)
+
 # ps_cloud.add_scalar_quantity("dist")
 ps.show()
