@@ -49,6 +49,7 @@ for i in range(grid_length):
         for k in range(grid_length):
             points.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 points = np.array(points)
+print(f"The points: {len(points)}")
 ps_cloud = ps.register_point_cloud("grid_nodes", points)
 
 # Rigid body mesh
@@ -86,7 +87,8 @@ for i in range(grid_length):
         for k in range(grid_length):
             if grid_affinities[TIMESTEP][i][j][k]:
                 grid_affinities_locs.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
-ps.register_point_cloud("grid_affinities", np.array(grid_affinities_locs))
+if len(grid_affinities_locs) > 0:
+    ps.register_point_cloud("grid_affinities", np.array(grid_affinities_locs))
 
 # Distance signs
 neg_dist = []
@@ -95,7 +97,8 @@ for i in range(grid_length):
         for k in range(grid_length):
             if grid_distance_signs[TIMESTEP][i][j][k] == -1:
                 neg_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
-ps.register_point_cloud("neg_dist", np.array(neg_dist))
+if len(neg_dist) != 0:
+    ps.register_point_cloud("neg_dist", np.array(neg_dist))
 
 pos_dist = []
 for i in range(grid_length):
@@ -103,7 +106,8 @@ for i in range(grid_length):
         for k in range(grid_length):
             if grid_distance_signs[TIMESTEP][i][j][k] == 1:
                 pos_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
-ps.register_point_cloud("pos_dist", np.array(pos_dist))
+if len(pos_dist) != 0:
+    ps.register_point_cloud("pos_dist", np.array(pos_dist))
 
 zero_dist = []
 for i in range(grid_length):
@@ -111,7 +115,8 @@ for i in range(grid_length):
         for k in range(grid_length):
             if grid_distance_signs[TIMESTEP][i][j][k] == 0:
                 zero_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
-ps.register_point_cloud("zero_dist", np.array(zero_dist))
+if len(zero_dist) != 0:
+    ps.register_point_cloud("zero_dist", np.array(zero_dist))
 
 if RENDER_DIST_FIELD:
     vals = []
