@@ -29,4 +29,6 @@ pub const BOUNDARY_C: f64 = 0.05; // Used to calculate v tilde (in equation 27 a
 
 // For output things
 pub const OUTPUT_GRID_DISTANCES: Option<usize> = Some(0); // usize is the timestep we want to save
+pub const OUTPUT_GRID_DISTANCE_SIGNS: Option<usize> = Some(0);
 pub const OUTPUT_GRID_VELOCITIES: Option<usize> = Some(0);
+pub const OUTPUT_GRID_AFFINITIES: Option<usize> = Some(0);

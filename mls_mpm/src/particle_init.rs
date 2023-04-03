@@ -23,13 +23,14 @@ pub fn uniform_sphere_centered_at_middle(radius: f64) -> Vec<Particle> {
                 + Vector3::new(
                     SIMULATION_SIZE / 2.0,
                     SIMULATION_SIZE / 2.0,
-                    SIMULATION_SIZE / 2.0,
+                    SIMULATION_SIZE / 2.0 - 1.0, // TODO change this back to center
                 ),
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
             mass: 1.0,
             density: INITIAL_DENSITY, //TODO I don't think this is correct...
             deformation_gradient: Matrix3::identity(),
+            affinity: false,
             tag: 0,
             particle_distance: 0.0,
             particle_normal: Vector3::zeros(),

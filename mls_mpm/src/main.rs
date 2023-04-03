@@ -5,6 +5,7 @@ mod math_utils;
 mod obj_loader;
 mod particle_init;
 mod serialize;
+mod tests;
 mod types;
 
 use nalgebra::{Matrix3, Vector3};
@@ -14,7 +15,7 @@ use tqdm::tqdm;
 
 use crate::config::{
     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH
+    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
@@ -53,6 +54,8 @@ fn main() {
         Vec::new(),
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
     );
     let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(0.5);
     let mut grid: Vec<Vec<Vec<Gridcell>>> =
@@ -62,7 +65,7 @@ fn main() {
 
     let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH);
     sim.add_rigid_body_mesh_data(&rigid_body);
-    rigid_body.position = Vector3::new(4.0, 4.0, 4.0);
+    rigid_body.position = Vector3::new(2.5, 2.5, 3.0);
     println!("Orientation: {:?}", rigid_body.orientation);
 
     println!("Initialization stuff done!");
@@ -85,6 +88,9 @@ fn main() {
                 }
             }
         }
+        // Update rigid body velocity and momentum at the very end!
+        let mut tot_change_in_angular_momentum = Vector3::new(0.0, 0.0, 0.0);
+        let mut tot_change_in_linear_velocity = Vector3::new(0.0, 0.0, 0.0);
         /*
         The code here is APIC.
         I am doing CPIC for the rigid body stuff, which comes after this
@@ -205,7 +211,7 @@ fn main() {
             // );
             let rp_normal = calculate_face_normal(p_surface.0, p_surface.1, p_surface.2);
             // println!("p_pos: {:?}", p_pos);
-            assert!(rp_normal.dot(&(p_surface.0 - p_pos)) < 1e-6, "{}", rp_normal.dot(&(p_surface.0 - p_pos)));
+            assert!(rp_normal.dot(&(p_surface.0 - p_pos)) < 1e-9, "{}", rp_normal.dot(&(p_surface.0 - p_pos)));
             assert!(is_point_in_triangle(p_pos, p_surface.0, p_surface.1, p_surface.2));
                 
             // calculate minumum distance
@@ -234,15 +240,19 @@ fn main() {
                 if grid[neighbor_i][neighbor_j][neighbor_k].unsigned_distance < dist {
                     continue;
                 }
-                
+                grid[neighbor_i][neighbor_j][neighbor_k].affinity = true;
                 // If it is the shortest distance, set the distance the be the current one
                 grid[neighbor_i][neighbor_j][neighbor_k].unsigned_distance = dist;
                 // Calculate the sign of the distance (inside or outside)
                 // Negative means inside the rigid body
-                if (proj - grid_cell_loc).dot(&rp_normal) < 0.0 {
+                if (grid_cell_loc - proj).dot(&rp_normal) < 0.0 {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = -1;
+                    println!("grid cell {:?} is now at distance -{}", (neighbor_i, neighbor_j, neighbor_k), dist);
+                
                 } else {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = 1;
+                    println!("grid cell {:?} is now at distance {}", (neighbor_i, neighbor_j, neighbor_k), dist);
+                
                 }
             }
         }
@@ -272,9 +282,12 @@ fn main() {
                         let z = z as usize;
                         let gridcell = grid[x][y][z];
                         // There should be no contribution if the grid cell is too far
-                        if gridcell.unsigned_distance >= 2.0 * GRID_SPACING {
+                        if !gridcell.affinity {
                             continue;
                         }
+                        // TODO According to 5.3.3, there needs to be some persistence in the color of the affinity,
+                        // but i'm updating it every timestep. Is this an issue?
+                        p.affinity = true;
                         sum += weighting_function(p.position, (x, y, z))
                             * gridcell.unsigned_distance
                             * gridcell.distance_sign as f64;
@@ -282,6 +295,7 @@ fn main() {
                 }
             }
             // TODO this seems redundant
+            println!("Particle dist: {}", sum);
             p.particle_distance = sum;
             p.tag = if sum > 0.0 { 1 } else { -1 };
         }
@@ -346,11 +360,12 @@ fn main() {
                         let y = y as usize;
                         let z = z as usize;
                         let gridcell = &mut grid[x][y][z];
-                        // Check compatibility
-                        if gridcell.distance_sign != p.tag {
-                            continue;
+                        // Check compatibility. If they're not nearby, then don't need to check compatibility?
+                        if gridcell.affinity {
+                            if gridcell.distance_sign != p.tag {
+                                continue;
+                            }    
                         }
-                        println!("{} {} {} has non-zero mass", x, y, z);
                         gridcell.mass += p.mass * weighting_function(p.position, (x, y, z));
                         assert!(gridcell.mass == grid[x][y][z].mass);
                     }
@@ -380,8 +395,10 @@ fn main() {
                         let z = z as usize;
                         let gridcell = &mut grid[x][y][z];
                         // Check compatibility
-                        if gridcell.distance_sign != p.tag {
-                            continue;
+                        if gridcell.affinity {
+                            if gridcell.distance_sign != p.tag {
+                                continue;
+                            }
                         }
                         let gridcell_pos =
                             Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
@@ -449,7 +466,6 @@ fn main() {
         }
 
         // g2p
-        let mut tot_change_in_angular_momentum = Vector3::new(0.0, 0.0, 0.0);
         for p in particles.iter_mut() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
             // Currently using sticky boundary
@@ -476,8 +492,11 @@ fn main() {
                         let z = z as usize;
                         let gridcell = grid[x][y][z];
                         // Check compatibility
-                        if gridcell.distance_sign != p.tag {
+                        if gridcell.distance_sign != p.tag && gridcell.affinity {
+                            println!("gridcell distance sign: {}", gridcell.distance_sign);
+                            println!("particle tag: {}", p.tag);
                             // Incompatible
+                            println!("Found incompatabile");
                             velocity += weighting_function(p.position, base_coord) * v_tilde;
                             b_new += weighting_function(p.position, base_coord)
                                 * v_tilde
@@ -492,9 +511,9 @@ fn main() {
                                 grid_cell_ind_to_world_coords(x, y, z),
                             );
                             // TODO Wrong impulse
-                            let impulse = (p.velocity - pr) * DELTA_T;
+                            let impulse = p.velocity - pr;
                             // Linear portion ezpz
-                            rigid_body.velocity += impulse / rigid_body.mass;
+                            tot_change_in_linear_velocity += impulse / rigid_body.mass;
                             
                             let radius = grid_cell_ind_to_world_coords(x, y, z) - rigid_body.position;
                             tot_change_in_angular_momentum += get_inertia_tensor_world(&rigid_body).try_inverse().unwrap()
@@ -530,6 +549,7 @@ fn main() {
         // Penalty impulse
         for p in particles.iter_mut() {
             if p.particle_distance < 0.0 {
+                println!("PENALTY IMPULSE");
                 let penalty_impulse =
                     -PENALTY_STIFFNESS * p.particle_distance * p.particle_normal * DELTA_T;
                 // Particle velocity update
@@ -537,7 +557,7 @@ fn main() {
                 // Rigid body update
                 let rb_impulse = -penalty_impulse;
                 // Linear portion
-                rigid_body.velocity += rb_impulse / rigid_body.mass;
+                tot_change_in_linear_velocity += rb_impulse / rigid_body.mass;
                 // Angular portion
                 let radius = p.position - rigid_body.position;
                 rigid_body.angular_momentum += rigid_body.inertia_tensor.try_inverse().unwrap()
@@ -558,8 +578,8 @@ fn main() {
         }
         
         // Adding gravity here... is there better way to do this?
-        rigid_body.velocity += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
-
+        tot_change_in_linear_velocity += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
+        
         // Boundary condition for rigid body
         if rigid_body.position.x < BOUNDARY
             || rigid_body.position.y < BOUNDARY
@@ -570,6 +590,10 @@ fn main() {
         {
             rigid_body.velocity = Vector3::new(0.0, 0.0, 0.0);
         }
+        // Rigid body velocity/angular momentum update
+        rigid_body.velocity += tot_change_in_linear_velocity;
+        rigid_body.angular_momentum += tot_change_in_angular_momentum;
+
         // Rigid body advection
         rigid_body.position += DELTA_T * rigid_body.velocity;
         rigid_body.orientation = update_orientation(rigid_body.orientation, get_omega(&rigid_body));
@@ -591,6 +615,23 @@ fn main() {
             }
             None => {},
         }
+        match OUTPUT_GRID_AFFINITIES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_affinities(&grid);
+                }
+            },
+            None => {},
+        }
+        match OUTPUT_GRID_DISTANCE_SIGNS {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_distance_signs(&grid);
+                }
+            },
+            None => {},
+        }
+        
     }
     // Since I'm dropping frames, the total number of "iterations" is different. Need to rename
     sim.num_iterations = sim.particle_positions.len();
