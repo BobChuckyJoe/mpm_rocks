@@ -47,8 +47,8 @@ def init():
     # Set rotation mode to quaternion
     rigid_body.rotation_mode = 'QUATERNION'
     # Add balls to represent unsigned distance field values
-    for i,j,k in itertools.product(range(len(unsigned_distance_field)), repeat=3):
-        mesh = bpy.ops.mesh.primitive_uv_sphere_add(name=f"grid_unsigned_{i}_{j}_{k}", radius=0.01, enter_editmode=False, location=(i * grid_spacing, j * grid_spacing, k * grid_spacing), scale=(1, 1, 1))
+    # for i,j,k in itertools.product(range(len(unsigned_distance_field)), repeat=3):
+        # mesh = bpy.ops.mesh.primitive_uv_sphere_add(name=f"grid_unsigned_{i}_{j}_{k}", radius=0.01, enter_editmode=False, location=(i * grid_spacing, j * grid_spacing, k * grid_spacing), scale=(1, 1, 1))
         # bpy.data.objects.new(f"grid_unsigned_{i}_{j}_{k}", mesh)
         # mat = bpy.data.materials.new(name="derp")
         # bpy.data.objects[f"grid_unsigned_{i}_{j}_{k}"].active_material = mat

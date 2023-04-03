@@ -14,7 +14,7 @@ use tqdm::tqdm;
 
 use crate::config::{
     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_SIZE,
+    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
@@ -48,39 +48,21 @@ fn main() {
         Vec::new(),
         [0.0, 0.0, 0.0],
         Vec::new(),
+        Vec::new(),
     );
     let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(0.5);
     let mut grid: Vec<Vec<Vec<Gridcell>>> =
         vec![vec![vec![Gridcell::new(); GRID_LENGTH]; GRID_LENGTH]; GRID_LENGTH];
 
     println!("Current directory: {:?}", std::env::current_dir());
-    // let contents = std::fs::read_to_string("icosahedron.obj").expect("Something went wrong reading the file");
-    // println!("{}", contents);
 
-    // Load rigid body object doesn't work for some reason...
-    // let obj = tobj::load_obj("icosahedron.obj", &tobj::GPU_LOAD_OPTIONS);
-    // assert!(obj.is_ok());
-    // let (models, materials) = obj.unwrap();
-    // let materials = materials.unwrap();
-    // println!("There are {} models", models.len());
-    // println!("There are {} materials", materials.len());
-    // let file = std::fs::File::open(RIGID_BODY_PATH).unwrap();
-    // let input = std::io::BufReader::new(file);
-    // let model: Obj = load_obj(input).unwrap();
-    // // println!("Model: {:?}", model);
-    // println!("Vertices: {:?}", model.vertices);
-    // println!("Indices: {:?}", model.indices);
-    // println!("Num indices: {:?}", model.indices.len());
-    // println!("Num vertices: {:?}", model.vertices.len());
-
-    // Exit for now
     let mut rigid_body: RigidBody = load_rigid_body("icosahedron.obj");
     sim.obj_file_com = [rigid_body.obj_file_com.x, rigid_body.obj_file_com.y, rigid_body.obj_file_com.z];
-    rigid_body.position = Vector3::new(2.0, 2.0, 3.0);
+    rigid_body.position = Vector3::new(4.0, 4.0, 4.0);
     println!("Orientation: {:?}", rigid_body.orientation);
 
     println!("Initialization stuff done!");
-    for iteration_num in tqdm(0..N_ITERATIONS) { // TODO CHANGE
+    for iteration_num in tqdm(0..N_ITERATIONS) {
         println!("START OF INTERATION {}", iteration_num);
         println!("Rigid body position: {:?}", rigid_body.position);
         println!("Rigid body velocity: {:?}", rigid_body.velocity);
@@ -218,6 +200,7 @@ fn main() {
             //     rigid_body.rigid_particle_normals[ind],
             // );
             let rp_normal = calculate_face_normal(p_surface.0, p_surface.1, p_surface.2);
+            // println!("p_pos: {:?}", p_pos);
             assert!(rp_normal.dot(&(p_surface.0 - p_pos)) < 1e-6, "{}", rp_normal.dot(&(p_surface.0 - p_pos)));
             assert!(is_point_in_triangle(p_pos, p_surface.0, p_surface.1, p_surface.2));
                 
@@ -247,7 +230,7 @@ fn main() {
                 if grid[neighbor_i][neighbor_j][neighbor_k].unsigned_distance < dist {
                     continue;
                 }
-
+                
                 // If it is the shortest distance, set the distance the be the current one
                 grid[neighbor_i][neighbor_j][neighbor_k].unsigned_distance = dist;
                 // Calculate the sign of the distance (inside or outside)
@@ -259,7 +242,6 @@ fn main() {
                 }
             }
         }
-        sim.add_signed_distance_field(&grid);
         
         // Calculate particle tags T_{pr}
         // Equation 21 from MLS-MPM paper
@@ -359,12 +341,14 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
-                        let mut gridcell = grid[x][y][z];
+                        let gridcell = &mut grid[x][y][z];
                         // Check compatibility
                         if gridcell.distance_sign != p.tag {
                             continue;
                         }
+                        println!("{} {} {} has non-zero mass", x, y, z);
                         gridcell.mass += p.mass * weighting_function(p.position, (x, y, z));
+                        assert!(gridcell.mass == grid[x][y][z].mass);
                     }
                 }
             }
@@ -390,7 +374,7 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
-                        let mut gridcell = grid[x][y][z];
+                        let gridcell = &mut grid[x][y][z];
                         // Check compatibility
                         if gridcell.distance_sign != p.tag {
                             continue;
@@ -442,7 +426,6 @@ fn main() {
             }
         }
         // Grid velocity update
-        // TODO I'm not exactly understanding how to implement the semi-implicit Euler integration.
         // It says that the grid position should not actually change, but the grid velocity should.
         // See eq 182 of mpm course
         // I'll just do explicit Euler for now
@@ -462,6 +445,7 @@ fn main() {
         }
 
         // g2p
+        let mut tot_change_in_angular_momentum = Vector3::new(0.0, 0.0, 0.0);
         for p in particles.iter_mut() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
             // Currently using sticky boundary
@@ -503,25 +487,18 @@ fn main() {
                                 p.particle_normal,
                                 grid_cell_ind_to_world_coords(x, y, z),
                             );
-                            let impulse = p.velocity - pr;
+                            // TODO Wrong impulse
+                            let impulse = (p.velocity - pr) * DELTA_T;
                             // Linear portion ezpz
                             rigid_body.velocity += impulse / rigid_body.mass;
                             
                             let radius = grid_cell_ind_to_world_coords(x, y, z) - rigid_body.position;
-                            // println!("rigid_body position {:?}", rigid_body.position);
-                            // println!("prev_omega {:?}", rigid_body.omega);
-                            // println!("impulse_material {:?}", impulse_material);
-                            // println!("rigid_body_velocity {:?}", rigid_body.velocity);
-                            // println!("rigid_body_position {:?}", rigid_body.position);
-                            // println!("radius_material {:?}", radius_material);
-                            // println!("orientation {:?}", rigid_body.orientation);
-                            // TODO this is sus
-                            rigid_body.angular_momentum += get_inertia_tensor_world(&rigid_body).try_inverse().unwrap()
+                            tot_change_in_angular_momentum += get_inertia_tensor_world(&rigid_body).try_inverse().unwrap()
                                 * radius.cross(&impulse);
+                            // println!("new_angular_momentum {:?}", rigid_body.angular_momentum);
                             // println!("new_omega {:?}", rigid_body.omega);
                         } else {
                             // Compatible
-                            println!("FOUND COMPATIBLE");
                             velocity +=
                                 weighting_function(p.position, (x, y, z)) * gridcell.velocity;
                             b_new += weighting_function(p.position, (x, y, z))
@@ -533,6 +510,7 @@ fn main() {
             }
             p.velocity = velocity;
             p.apic_b = b_new;
+            rigid_body.angular_momentum += tot_change_in_angular_momentum;
 
             // Boundary conditions
             if p.position.x < BOUNDARY
@@ -555,7 +533,6 @@ fn main() {
                 // Rigid body update
                 let rb_impulse = -penalty_impulse;
                 // Linear portion
-                println!("rb_impulse: {:?}", rb_impulse);
                 rigid_body.velocity += rb_impulse / rigid_body.mass;
                 // Angular portion
                 let radius = p.position - rigid_body.position;
@@ -573,7 +550,6 @@ fn main() {
             // TODO Do the clamping thing on the singular values for snow plasticity
 
             // Particle advection
-            println!("p.velocity: {:?}", p.velocity);
             p.position += DELTA_T * p.velocity;
         }
         
@@ -593,6 +569,24 @@ fn main() {
         // Rigid body advection
         rigid_body.position += DELTA_T * rigid_body.velocity;
         rigid_body.orientation = update_orientation(rigid_body.orientation, get_omega(&rigid_body));
+
+        // Add grid values to sim
+        match OUTPUT_GRID_DISTANCES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_signed_distance_field(&grid);
+                }
+            }
+            None => {},
+        }
+        match OUTPUT_GRID_VELOCITIES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_velocities(&grid);
+                }
+            }
+            None => {},
+        }
     }
     // Since I'm dropping frames, the total number of "iterations" is different. Need to rename
     sim.num_iterations = sim.particle_positions.len();

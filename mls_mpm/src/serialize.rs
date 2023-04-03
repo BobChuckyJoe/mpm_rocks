@@ -16,7 +16,9 @@ pub struct Simulation {
     pub rigid_body_velocities: Vec<[f64; 3]>,
     pub rigid_body_angular_momentums: Vec<[f64; 3]>,
     pub obj_file_com: [f64; 3], // Center of mass of the obj file
+    // Grid things
     pub unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>, // At each timestep, the distance of each grid point to the closest rigid body
+    pub grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
 }
 
 impl Simulation {
@@ -34,6 +36,7 @@ impl Simulation {
         rigid_body_angular_momentums: Vec<[f64;3]>,
         obj_file_com: [f64; 3],
         unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>,
+        grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
     ) -> Simulation {
         Simulation {
             box_size,
@@ -49,6 +52,7 @@ impl Simulation {
             rigid_body_angular_momentums,
             obj_file_com,
             unsigned_distance_field,
+            grid_velocities: grid_velocities
         }
     }
 
@@ -80,5 +84,21 @@ impl Simulation {
             to_ret.push(inner);
         }
         self.unsigned_distance_field.push(to_ret);
+    }
+
+    pub fn add_grid_velocities(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {
+        let mut to_ret: Vec<Vec<Vec<[f64; 3]>>> = Vec::new();
+        for i in 0..grid.len() {
+            let mut inner: Vec<Vec<[f64; 3]>> = Vec::new();
+            for j in 0..grid[i].len() {
+                let mut inner_2: Vec<[f64; 3]> = Vec::new();
+                for k in 0..grid[i][j].len() {
+                    inner_2.push(vector3_to_array(grid[i][j][k].velocity));
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.grid_velocities.push(to_ret);
     }
 }
