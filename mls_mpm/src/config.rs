@@ -1,9 +1,9 @@
-pub const SIMULATION_SIZE: f64 = 5.0;
+pub const SIMULATION_SIZE: f64 = 10.0;
 pub const GRID_LENGTH: usize = 10;
 pub const GRID_SPACING: f64 = SIMULATION_SIZE / GRID_LENGTH as f64;
 pub const DELTA_T: f64 = 0.001;
-pub const N_PARTICLES: usize = 4;
-pub const N_ITERATIONS: usize = 10;
+pub const N_PARTICLES: usize = 40;
+pub const N_ITERATIONS: usize = 1000;
 pub const BOUNDARY: f64 = 0.05; // Particles this close to the boundary have their velocities zeroed out
 
 //  Values from the 2013 snow paper
@@ -25,10 +25,11 @@ pub const RIGID_BODY_PARTICLES_PER_FACE: usize = 30;
 
 // For penalty force
 pub const PENALTY_STIFFNESS: f64 = 1e-5;
-pub const BOUNDARY_C: f64 = 0.05; // Used to calculate v tilde (in equation 27 and 28 of MLS MPM paper)
+pub const BOUNDARY_C: f64 = 0.0005; // Used to calculate v tilde (in equation 27 and 28 of MLS MPM paper)
 
 // For output things
-pub const OUTPUT_GRID_DISTANCES: Option<usize> = Some(0); // usize is the timestep we want to save
-pub const OUTPUT_GRID_DISTANCE_SIGNS: Option<usize> = Some(0);
-pub const OUTPUT_GRID_VELOCITIES: Option<usize> = Some(0);
-pub const OUTPUT_GRID_AFFINITIES: Option<usize> = Some(0);
+pub const TIME_TO_SAVE: usize = 1;
+pub const OUTPUT_GRID_DISTANCES: Option<usize> = Some(TIME_TO_SAVE); // usize is the timestep we want to save
+pub const OUTPUT_GRID_DISTANCE_SIGNS: Option<usize> = Some(TIME_TO_SAVE);
+pub const OUTPUT_GRID_VELOCITIES: Option<usize> = Some(TIME_TO_SAVE);
+pub const OUTPUT_GRID_AFFINITIES: Option<usize> = Some(TIME_TO_SAVE);

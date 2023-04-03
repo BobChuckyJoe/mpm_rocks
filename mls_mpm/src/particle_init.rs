@@ -20,11 +20,12 @@ pub fn uniform_sphere_centered_at_middle(radius: f64) -> Vec<Particle> {
 
         let p = Particle {
             position: Vector3::new(x, y, z) * radius
-                + Vector3::new(
-                    SIMULATION_SIZE / 2.0,
-                    SIMULATION_SIZE / 2.0,
-                    SIMULATION_SIZE / 2.0 - 1.0, // TODO change this back to center
-                ),
+                // + Vector3::new(
+                //     SIMULATION_SIZE / 2.0,
+                //     SIMULATION_SIZE / 2.0,
+                //     SIMULATION_SIZE / 2.0, // TODO change this back to center
+                // ),
+                + Vector3::new(5.0, 5.0, 5.0),
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
             mass: 1.0,

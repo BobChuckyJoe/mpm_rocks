@@ -65,7 +65,8 @@ fn main() {
 
     let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH);
     sim.add_rigid_body_mesh_data(&rigid_body);
-    rigid_body.position = Vector3::new(2.5, 2.5, 3.0);
+    rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
+    rigid_body.angular_momentum = Vector3::new(0.0, 10.0, 0.0);
     println!("Orientation: {:?}", rigid_body.orientation);
 
     println!("Initialization stuff done!");
@@ -75,6 +76,7 @@ fn main() {
         println!("Rigid body velocity: {:?}", rigid_body.velocity);
         println!("Rigid body orientation: {:?}", rigid_body.orientation);
         println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
+        println!("particle 0 velocity: {:?}", particles[0].velocity);
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
             // Write the locations every 40 miliseconds, which corresponds to 25 fps
             sim.add_particle_pos(&particles);
@@ -292,8 +294,6 @@ fn main() {
                     }
                 }
             }
-            // TODO this seems redundant
-            println!("Particle dist: {}", sum);
             p.particle_distance = sum;
             p.tag = if sum > 0.0 { 1 } else { -1 };
         }
@@ -392,17 +392,21 @@ fn main() {
                         let y = y as usize;
                         let z = z as usize;
                         let gridcell = &mut grid[x][y][z];
+                        let grid_mass = gridcell.mass;
                         // Check compatibility
                         if gridcell.affinity {
                             if gridcell.distance_sign != p.tag {
                                 continue;
                             }
                         }
+                        if grid_mass == 0.0 {
+                            continue;
+                        }
                         let gridcell_pos =
                             Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        gridcell.velocity += p.mass
+                        grid[x][y][z].velocity += p.mass
                             * weighting_function(p.position, (x, y, z))
-                            * (p.velocity + D_INV * p.apic_b * (gridcell_pos - p.position));
+                            * (p.velocity + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
                     }
                 }
             }
@@ -457,8 +461,8 @@ fn main() {
                     let grid_force = grid[i][j][k].force;
                     let grid_mass = grid[i][j][k].mass;
                     grid[i][j][k].velocity += DELTA_T * grid_force / grid_mass;
-                    grid[i][j][k].velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
                     // Gravity
+                    grid[i][j][k].velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
                 }
             }
         }
@@ -491,10 +495,7 @@ fn main() {
                         let gridcell = grid[x][y][z];
                         // Check compatibility
                         if gridcell.distance_sign != p.tag && gridcell.affinity && p.affinity {
-                            println!("gridcell distance sign: {}", gridcell.distance_sign);
-                            println!("particle tag: {}", p.tag);
                             // Incompatible
-                            println!("Found incompatabile");
                             velocity += weighting_function(p.position, base_coord) * v_tilde;
                             b_new += weighting_function(p.position, base_coord)
                                 * v_tilde
@@ -508,8 +509,6 @@ fn main() {
                                 p.particle_normal,
                                 grid_cell_ind_to_world_coords(x, y, z),
                             );
-                            println!("particle velocity {:?}", p.velocity);
-                            println!("pr {:?}", pr);
                             let impulse = p.mass * (p.velocity - pr) * weighting_function(p.position, (x,y, z));
                             // Linear portion ezpz
                             tot_change_in_linear_velocity += impulse / rigid_body.mass;
@@ -531,6 +530,7 @@ fn main() {
                 }
             }
             p.velocity = velocity;
+            // p.velocity += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
             p.apic_b = b_new;
             rigid_body.angular_momentum += tot_change_in_angular_momentum;
 
