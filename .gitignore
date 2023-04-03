@@ -16,3 +16,4 @@ eigen-3.4.0/
 venv/
 .polyscope.ini
 imgui.ini
+__pychache__/
