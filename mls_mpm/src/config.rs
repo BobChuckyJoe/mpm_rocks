@@ -3,7 +3,7 @@ pub const GRID_LENGTH: usize = 10;
 pub const GRID_SPACING: f64 = SIMULATION_SIZE / GRID_LENGTH as f64;
 pub const DELTA_T: f64 = 0.001;
 pub const N_PARTICLES: usize = 4;
-pub const N_ITERATIONS: usize = 10;
+pub const N_ITERATIONS: usize = 10000;
 pub const BOUNDARY: f64 = 0.05; // Particles this close to the boundary have their velocities zeroed out
 
 //  Values from the 2013 snow paper
@@ -30,3 +30,4 @@ pub const BOUNDARY_C: f64 = 0.05; // Used to calculate v tilde (in equation 27 a
 // For output things
 pub const OUTPUT_GRID_DISTANCES: Option<usize> = Some(0); // usize is the timestep we want to save
 pub const OUTPUT_GRID_VELOCITIES: Option<usize> = Some(0);
+pub const OUTPUT_GRID_AFFINITIES: Option<usize> = Some(0);

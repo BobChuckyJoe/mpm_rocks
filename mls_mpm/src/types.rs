@@ -10,6 +10,7 @@ pub struct Particle {
     pub deformation_gradient: Matrix3<f64>,
     pub mass: f64,
     pub density: f64,
+    pub affinity: bool, // A_{pr} in the MLS MPM paper
     pub tag: i32,                      // This is the T_{pr} from equation 21
     pub particle_distance: f64, // d_p from 5.3.2 of MLS MPM paper. I'm also assuming that sign(d_p) = T_{ir}
     pub particle_normal: Vector3<f64>, // The particle normal from 5.3.2 of MLS MPM paper
@@ -44,6 +45,7 @@ impl Gridcell {
         self.mass = 0.0;
         self.force.scale_mut(0.0);
         self.unsigned_distance = 1000000.0; // Because, we're doing a min operation, this should be large at first
+        self.affinity = false;
         self.distance_sign = 0;
     }
 }
