@@ -24,6 +24,7 @@ pub struct Simulation {
     // Grid things
     pub unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>, // At each timestep, the distance of each grid point to the closest rigid body
     pub grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
+    pub grid_affinities: Vec<Vec<Vec<Vec<bool>>>>,
 }
 
 impl Simulation {
@@ -46,6 +47,7 @@ impl Simulation {
         rigid_particle_triangles: Vec<usize>,
         unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>,
         grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
+        grid_affinities: Vec<Vec<Vec<Vec<bool>>>>,
     ) -> Simulation {
         Simulation {
             box_size,
@@ -66,6 +68,7 @@ impl Simulation {
             rigid_particle_triangles,
             unsigned_distance_field,
             grid_velocities,
+            grid_affinities
         }
     }
 
@@ -120,5 +123,20 @@ impl Simulation {
             to_ret.push(inner);
         }
         self.grid_velocities.push(to_ret);
+    }
+    pub fn add_grid_affinities(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {
+        let mut to_ret: Vec<Vec<Vec<bool>>> = Vec::new();
+        for i in 0..grid.len() {
+            let mut inner: Vec<Vec<bool>> = Vec::new();
+            for j in 0..grid[i].len() {
+                let mut inner_2: Vec<bool> = Vec::new();
+                for k in 0..grid[i][j].len() {
+                    inner_2.push(grid[i][j][k].affinity);
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.grid_affinities.push(to_ret);
     }
 }
