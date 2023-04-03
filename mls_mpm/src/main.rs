@@ -247,12 +247,10 @@ fn main() {
                 // Negative means inside the rigid body
                 if (grid_cell_loc - proj).dot(&rp_normal) < 0.0 {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = -1;
-                    println!("grid cell {:?} is now at distance -{}", (neighbor_i, neighbor_j, neighbor_k), dist);
-                
+                    // println!("grid cell {:?} is now at distance -{}", (neighbor_i, neighbor_j, neighbor_k), dist);
                 } else {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = 1;
-                    println!("grid cell {:?} is now at distance {}", (neighbor_i, neighbor_j, neighbor_k), dist);
-                
+                    // println!("grid cell {:?} is now at distance {}", (neighbor_i, neighbor_j, neighbor_k), dist);
                 }
             }
         }
@@ -492,7 +490,7 @@ fn main() {
                         let z = z as usize;
                         let gridcell = grid[x][y][z];
                         // Check compatibility
-                        if gridcell.distance_sign != p.tag && gridcell.affinity {
+                        if gridcell.distance_sign != p.tag && gridcell.affinity && p.affinity {
                             println!("gridcell distance sign: {}", gridcell.distance_sign);
                             println!("particle tag: {}", p.tag);
                             // Incompatible
@@ -510,8 +508,9 @@ fn main() {
                                 p.particle_normal,
                                 grid_cell_ind_to_world_coords(x, y, z),
                             );
-                            // TODO Wrong impulse
-                            let impulse = p.velocity - pr;
+                            println!("particle velocity {:?}", p.velocity);
+                            println!("pr {:?}", pr);
+                            let impulse = p.mass * (p.velocity - pr) * weighting_function(p.position, (x,y, z));
                             // Linear portion ezpz
                             tot_change_in_linear_velocity += impulse / rigid_body.mass;
                             
