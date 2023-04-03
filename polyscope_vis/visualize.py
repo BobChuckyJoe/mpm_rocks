@@ -17,6 +17,9 @@ ps.set_up_dir("z_up")
 # Load the stuff
 with open(os.path.expanduser("~") + "/Downloads/sim.json") as f:
     sim = json.load(f)
+
+grid_affinities = sim["grid_affinities"]
+grid_distance_signs = sim["grid_distance_signs"]
 grid_length = sim["grid_length"]
 grid_spacing = sim["grid_spacing"]
 num_particles = sim["num_particles"]
@@ -76,6 +79,39 @@ for i in range(len(rigid_particle_triangles)):
 rigid_particle_face_normals = np.array(rigid_particle_face_normals)
 rigid_particle_position_point_cloud.add_vector_quantity("rigid_particle_face_normals", rigid_particle_face_normals, radius = 0.001, length = 0.005)
 
+# Grid affinities, which shows which nodes have a valid distance to the rigid body
+grid_affinities_locs = []
+for i in range(grid_length):
+    for j in range(grid_length):
+        for k in range(grid_length):
+            if grid_affinities[TIMESTEP][i][j][k]:
+                grid_affinities_locs.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
+ps.register_point_cloud("grid_affinities", np.array(grid_affinities_locs))
+
+# Distance signs
+neg_dist = []
+for i in range(grid_length):
+    for j in range(grid_length):
+        for k in range(grid_length):
+            if grid_distance_signs[TIMESTEP][i][j][k] == -1:
+                neg_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
+ps.register_point_cloud("neg_dist", np.array(neg_dist))
+
+pos_dist = []
+for i in range(grid_length):
+    for j in range(grid_length):
+        for k in range(grid_length):
+            if grid_distance_signs[TIMESTEP][i][j][k] == 1:
+                pos_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
+ps.register_point_cloud("pos_dist", np.array(pos_dist))
+
+zero_dist = []
+for i in range(grid_length):
+    for j in range(grid_length):
+        for k in range(grid_length):
+            if grid_distance_signs[TIMESTEP][i][j][k] == 0:
+                zero_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
+ps.register_point_cloud("zero_dist", np.array(zero_dist))
 
 if RENDER_DIST_FIELD:
     vals = []
