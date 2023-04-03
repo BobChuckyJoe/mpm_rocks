@@ -15,7 +15,7 @@ use tqdm::tqdm;
 
 use crate::config::{
     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH
+    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
@@ -50,6 +50,7 @@ fn main() {
         Vec::new(),
         Vec::new(),
         [0.0, 0.0, 0.0],
+        Vec::new(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -246,8 +247,12 @@ fn main() {
                 // Negative means inside the rigid body
                 if (grid_cell_loc - proj).dot(&rp_normal) < 0.0 {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = -1;
+                    println!("grid cell {:?} is now at distance -{}", (neighbor_i, neighbor_j, neighbor_k), dist);
+                
                 } else {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = 1;
+                    println!("grid cell {:?} is now at distance {}", (neighbor_i, neighbor_j, neighbor_k), dist);
+                
                 }
             }
         }
@@ -618,6 +623,15 @@ fn main() {
             },
             None => {},
         }
+        match OUTPUT_GRID_DISTANCE_SIGNS {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_distance_signs(&grid);
+                }
+            },
+            None => {},
+        }
+        
     }
     // Since I'm dropping frames, the total number of "iterations" is different. Need to rename
     sim.num_iterations = sim.particle_positions.len();

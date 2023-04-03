@@ -23,6 +23,7 @@ pub struct Simulation {
     pub rigid_particle_triangles: Vec<usize>,
     // Grid things
     pub unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>, // At each timestep, the distance of each grid point to the closest rigid body
+    pub grid_distance_signs: Vec<Vec<Vec<Vec<i32>>>>,
     pub grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
     pub grid_affinities: Vec<Vec<Vec<Vec<bool>>>>,
 }
@@ -46,6 +47,7 @@ impl Simulation {
         rigid_particle_positions: Vec<[f64; 3]>,
         rigid_particle_triangles: Vec<usize>,
         unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>,
+        grid_distance_signs: Vec<Vec<Vec<Vec<i32>>>>,
         grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
         grid_affinities: Vec<Vec<Vec<Vec<bool>>>>,
     ) -> Simulation {
@@ -67,6 +69,7 @@ impl Simulation {
             rigid_particle_positions,
             rigid_particle_triangles,
             unsigned_distance_field,
+            grid_distance_signs,
             grid_velocities,
             grid_affinities
         }
@@ -138,5 +141,20 @@ impl Simulation {
             to_ret.push(inner);
         }
         self.grid_affinities.push(to_ret);
+    }
+    pub fn add_grid_distance_signs(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {
+        let mut to_ret: Vec<Vec<Vec<i32>>> = Vec::new();
+        for i in 0..grid.len() {
+            let mut inner: Vec<Vec<i32>> = Vec::new();
+            for j in 0..grid[i].len() {
+                let mut inner_2: Vec<i32> = Vec::new();
+                for k in 0..grid[i][j].len() {
+                    inner_2.push(grid[i][j][k].distance_sign);
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.grid_distance_signs.push(to_ret);
     }
 }
