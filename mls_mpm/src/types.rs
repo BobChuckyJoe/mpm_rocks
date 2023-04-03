@@ -22,7 +22,8 @@ pub struct Gridcell {
     pub force: Vector3<f64>,
     pub unsigned_distance: f64, // Smallest unsigned distance to a rigid particle
     pub rigid_particle_index: i32, // the index of the rigid particle that this gridcell is closest to
-    pub distance_sign: i32,        // T_{ir}
+    pub affinity: bool, // Whether the grid cell is close enough to a rigid body. A_{ir} in the MLS MPM paper
+    pub distance_sign: i32, // T_{ir}
 }
 
 impl Gridcell {
@@ -33,6 +34,7 @@ impl Gridcell {
             force: Vector3::zeros(),
             unsigned_distance: 1000000.0,
             rigid_particle_index: -1,
+            affinity: false,
             distance_sign: 0,
         }
     }

@@ -14,7 +14,7 @@ use tqdm::tqdm;
 
 use crate::config::{
     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES
+    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
@@ -46,7 +46,11 @@ fn main() {
         Vec::new(),
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
         [0.0, 0.0, 0.0],
+        Vec::new(),
+        Vec::new(),
         Vec::new(),
         Vec::new(),
     );
@@ -56,8 +60,8 @@ fn main() {
 
     println!("Current directory: {:?}", std::env::current_dir());
 
-    let mut rigid_body: RigidBody = load_rigid_body("icosahedron.obj");
-    sim.obj_file_com = [rigid_body.obj_file_com.x, rigid_body.obj_file_com.y, rigid_body.obj_file_com.z];
+    let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH);
+    sim.add_rigid_body_mesh_data(&rigid_body);
     rigid_body.position = Vector3::new(4.0, 4.0, 4.0);
     println!("Orientation: {:?}", rigid_body.orientation);
 

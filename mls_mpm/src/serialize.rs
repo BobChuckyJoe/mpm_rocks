@@ -15,7 +15,12 @@ pub struct Simulation {
     pub rigid_body_orientations: Vec<[f64; 4]>,
     pub rigid_body_velocities: Vec<[f64; 3]>,
     pub rigid_body_angular_momentums: Vec<[f64; 3]>,
+    // Rigid body geometry things, doesn't change over time
+    pub rigid_body_vertices: Vec<[f64; 3]>,
+    pub rigid_body_triangles: Vec<[usize; 3]>,
     pub obj_file_com: [f64; 3], // Center of mass of the obj file
+    pub rigid_particle_positions: Vec<[f64; 3]>,
+    pub rigid_particle_triangles: Vec<usize>,
     // Grid things
     pub unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>, // At each timestep, the distance of each grid point to the closest rigid body
     pub grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
@@ -34,7 +39,11 @@ impl Simulation {
         rigid_body_orientations: Vec<[f64; 4]>,
         rigid_body_velocities: Vec<[f64; 3]>,
         rigid_body_angular_momentums: Vec<[f64;3]>,
+        rigid_body_vertices: Vec<[f64; 3]>,
+        rigid_body_triangles: Vec<[usize; 3]>,
         obj_file_com: [f64; 3],
+        rigid_particle_positions: Vec<[f64; 3]>,
+        rigid_particle_triangles: Vec<usize>,
         unsigned_distance_field: Vec<Vec<Vec<Vec<f64>>>>,
         grid_velocities: Vec<Vec<Vec<Vec<[f64; 3]>>>>,
     ) -> Simulation {
@@ -50,9 +59,13 @@ impl Simulation {
             rigid_body_orientations,
             rigid_body_velocities,
             rigid_body_angular_momentums,
+            rigid_body_vertices,
+            rigid_body_triangles,
             obj_file_com,
+            rigid_particle_positions,
+            rigid_particle_triangles,
             unsigned_distance_field,
-            grid_velocities: grid_velocities
+            grid_velocities,
         }
     }
 
@@ -68,6 +81,13 @@ impl Simulation {
         self.rigid_body_orientations.push(quaternion_to_array(rb.orientation));
         self.rigid_body_velocities.push(vector3_to_array(rb.velocity));
         self.rigid_body_angular_momentums.push(vector3_to_array(rb.angular_momentum));
+    }
+    pub fn add_rigid_body_mesh_data(&mut self, rb: &RigidBody) {
+        self.rigid_body_vertices = rb.vertices.iter().map(|v| vector3_to_array(*v)).collect();
+        self.rigid_body_triangles = rb.faces.iter().map(|f| [f.0, f.1, f.2]).collect();
+        self.obj_file_com = vector3_to_array(rb.obj_file_com);
+        self.rigid_particle_positions = rb.rigid_particle_positions.iter().map(|v| vector3_to_array(*v)).collect();
+        self.rigid_particle_triangles = rb.rigid_particle_triangles.clone();
     }
 
     pub fn add_signed_distance_field(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {

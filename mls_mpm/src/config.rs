@@ -19,7 +19,7 @@ pub const LAMBDA_0: f64 =
     YOUNGS_MODULUS * POISSONS_RATIO / ((1.0 + POISSONS_RATIO) * (1.0 - 2.0 * POISSONS_RATIO)); // lame parameter
 
 // Path to the rigid body mesh to load
-pub const RIGID_BODY_PATH: &str = "triangulated_icosahedron.obj";
+pub const RIGID_BODY_PATH: &str = "icosahedron.obj";
 pub const RIGID_BODY_WEIGHT: f64 = 1.0; // Currently assuming isotropic density
 pub const RIGID_BODY_PARTICLES_PER_FACE: usize = 30;
 
