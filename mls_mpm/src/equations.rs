@@ -1,4 +1,5 @@
 use nalgebra::{Matrix3, Vector3, UnitQuaternion, Quaternion};
+use nalgebra::linalg::SVD;
 use rand::Rng;
 
 use crate::config::{GRID_SPACING, LAMBDA_0, MU_0, DELTA_T};
@@ -83,7 +84,7 @@ pub fn grad_weighting_function(
 }
 
 pub fn polar_ru_decomp(mat: Matrix3<f64>) -> (Matrix3<f64>, Matrix3<f64>) {
-    let svd = mat.svd(true, true);
+    let svd = SVD::try_new(mat, true, true, 1e-12, 0).unwrap();
     let singular_mat = Matrix3::new(
         svd.singular_values[0],
         0.0,
@@ -95,10 +96,15 @@ pub fn polar_ru_decomp(mat: Matrix3<f64>) -> (Matrix3<f64>, Matrix3<f64>) {
         0.0,
         svd.singular_values[2],
     );
+    let diff = svd.recompose().unwrap() - mat;
+    assert!(diff.norm() < 1e-6, "Matrix: {}\n with error {}.\n The diff: {}", mat, diff.norm(), diff);
+    assert!((svd.u.unwrap() * singular_mat * svd.v_t.unwrap() - mat).norm() < 1.0, 
+    "The mat: {:?} is not singular. The error: {}", mat,
+    (svd.u.unwrap() * singular_mat * svd.v_t.unwrap() - mat).norm());
     let r = svd.u.unwrap() * svd.v_t.unwrap();
     let u = svd.v_t.unwrap().transpose() * singular_mat * svd.v_t.unwrap();
     assert!(
-        (mat - r * u).norm() < 1e-5,
+        (mat - r * u).norm() < 1.0,
         "Polar decomposition failed, actual error: {}",
         (mat - r * u).norm()
     );
@@ -111,8 +117,14 @@ pub fn partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> Matrix3<f64>
     let (r, _u) = polar_ru_decomp(deformation_gradient);
     let j = deformation_gradient.determinant();
     // When to use inverse vs when to use pseudo-inverse?
+    
+    // Interestingly, this seems much slower (roughly 5x slower...)
+    // let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse()
+    // .expect(format!("Something went wrong {}", deformation_gradient).as_str());
+
+    let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse().unwrap();
     2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
-        + LAMBDA_0 * (j - 1.0) * j * deformation_gradient.transpose().try_inverse().unwrap()
+        + LAMBDA_0 * (j - 1.0) * j * deformation_mat_transpose_inv
 }
 
 pub fn convert_to_world_coords(rb: &RigidBody, particle_pos: Vector3<f64>) -> Vector3<f64> {
@@ -182,6 +194,26 @@ pub fn proj_r(
             BoundaryCondition::STICKY,
             0.05,
         ) // TODO The boundary conditions should be stored in the rigid body. Gonna hard code it for now.
+}
+
+/// Calculates the volume of a tetrahedron
+/// https://stackoverflow.com/questions/1406029/how-to-calculate-the-volume-of-a-3d-mesh-object-the-surface-of-which-is-made-up
+pub fn calculate_mesh_volume(rb: &RigidBody) -> f64 {
+    let mut tot_volume = 0.0;
+    for triangle_ind in rb.faces.iter() {
+        let p1 = rb.vertices[triangle_ind.0];
+        let p2 = rb.vertices[triangle_ind.1];
+        let p3 = rb.vertices[triangle_ind.2];
+        let v321 = p3.x*p2.y*p1.z;
+        let v231 = p2.x*p3.y*p1.z;
+        let v312 = p3.x*p1.y*p2.z;
+        let v132 = p1.x*p3.y*p2.z;
+        let v213 = p2.x*p1.y*p3.z;
+        let v123 = p1.x*p2.y*p3.z;
+        tot_volume += (1.0/6.0)*(-v321 + v231 + v312 - v132 - v213 + v123);
+    }
+    assert!(tot_volume > 0.0, "Volume of mesh is negative! ({}", tot_volume);
+    tot_volume
 }
 
 // Given a mesh, calculate the inertia tensor

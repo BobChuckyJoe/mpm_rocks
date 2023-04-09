@@ -21,9 +21,9 @@ particle_positions = stuff["particle_positions"]
 rigid_body_positions = stuff["rigid_body_positions"]
 rigid_body_orientations = stuff["rigid_body_orientations"]
 rigid_body_velocities = stuff["rigid_body_velocities"]
-rigid_body_omegas = stuff["rigid_body_omegas"]
+#rigid_body_omegas = stuff["rigid_body_omegas"]
 obj_file_com = stuff["obj_file_com"]
-unsigned_distance_field = stuff["unsigned_distance_field"]
+#unsigned_distance_field = stuff["unsigned_distance_field"]
 
 rigid_body = bpy.data.objects["rigid_body"]
 

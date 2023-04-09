@@ -2,10 +2,10 @@ use nalgebra::{Matrix3, UnitQuaternion, Vector3};
 use tobj::{self, Mesh};
 
 use crate::config::RIGID_BODY_PARTICLES_PER_FACE;
-use crate::equations::{calculate_inertia_tensor, calculate_center_of_mass, generate_random_point_on_triangle};
+use crate::equations::{calculate_inertia_tensor, calculate_center_of_mass, generate_random_point_on_triangle, calculate_mesh_volume};
 use crate::types::RigidBody;
 
-pub fn load_rigid_body(path: &str) -> RigidBody {
+pub fn load_rigid_body(path: &str, density: f64) -> RigidBody {
     let (models, _) = tobj::load_obj(path, &tobj::LoadOptions::default()).unwrap();
     let model = models[0].clone();
     let mesh = model.mesh;
@@ -43,6 +43,7 @@ pub fn load_rigid_body(path: &str) -> RigidBody {
     for v in &mut rb.vertices {
         *v -= com;
     }
+
     // Create rigid particles
     create_rigid_particles(&mut rb, Some(RIGID_BODY_PARTICLES_PER_FACE));
     println!("Rigid particles: {}", rb.rigid_particle_positions.len());
@@ -51,6 +52,11 @@ pub fn load_rigid_body(path: &str) -> RigidBody {
     let inertia_tensor = calculate_inertia_tensor(&rb);
     rb.inertia_tensor = inertia_tensor;
 
+    // Scale things with density
+    rb.inertia_tensor *= density;
+    let volume = calculate_mesh_volume(&rb);
+    rb.mass = density * volume;
+    
     rb
     
 }

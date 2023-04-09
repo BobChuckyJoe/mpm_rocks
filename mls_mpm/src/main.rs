@@ -7,6 +7,7 @@ mod particle_init;
 mod serialize;
 mod tests;
 mod types;
+mod material_properties;
 
 use nalgebra::{Matrix3, Vector3};
 // use tobj::{load_obj};
@@ -23,6 +24,7 @@ use crate::equations::{
     grid_cell_ind_to_world_coords, partial_psi_partial_f, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
 use crate::icosahedron::create_icosahedron;
+use crate::material_properties::GRANITE_DENSITY;
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
 use crate::serialize::Simulation;
@@ -57,26 +59,26 @@ fn main() {
         Vec::new(),
         Vec::new(),
     );
-    let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(0.5);
+    let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5);
     let mut grid: Vec<Vec<Vec<Gridcell>>> =
         vec![vec![vec![Gridcell::new(); GRID_LENGTH]; GRID_LENGTH]; GRID_LENGTH];
 
     println!("Current directory: {:?}", std::env::current_dir());
 
-    let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH);
+    let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH, 1000.0);
     sim.add_rigid_body_mesh_data(&rigid_body);
     rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
-    rigid_body.angular_momentum = Vector3::new(0.0, 10.0, 0.0);
+    rigid_body.angular_momentum = Vector3::new(0.0, 100000.0, 0.0);
     println!("Orientation: {:?}", rigid_body.orientation);
 
     println!("Initialization stuff done!");
     for iteration_num in tqdm(0..N_ITERATIONS) {
-        println!("START OF INTERATION {}", iteration_num);
-        println!("Rigid body position: {:?}", rigid_body.position);
-        println!("Rigid body velocity: {:?}", rigid_body.velocity);
-        println!("Rigid body orientation: {:?}", rigid_body.orientation);
-        println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
-        println!("particle 0 velocity: {:?}", particles[0].velocity);
+        // println!("START OF INTERATION {}", iteration_num);
+        // println!("Rigid body position: {:?}", rigid_body.position);
+        // println!("Rigid body velocity: {:?}", rigid_body.velocity);
+        // println!("Rigid body orientation: {:?}", rigid_body.orientation);
+        // println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
+        // println!("particle 0 velocity: {:?}", particles[0].velocity);
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
             // Write the locations every 40 miliseconds, which corresponds to 25 fps
             sim.add_particle_pos(&particles);
@@ -532,7 +534,6 @@ fn main() {
             p.velocity = velocity;
             // p.velocity += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
             p.apic_b = b_new;
-            rigid_body.angular_momentum += tot_change_in_angular_momentum;
 
             // Boundary conditions
             if p.position.x < BOUNDARY
@@ -548,7 +549,7 @@ fn main() {
         // Penalty impulse
         for p in particles.iter_mut() {
             if p.particle_distance < 0.0 {
-                println!("PENALTY IMPULSE");
+                // println!("PENALTY_IMPULE!");
                 let penalty_impulse =
                     -PENALTY_STIFFNESS * p.particle_distance * p.particle_normal * DELTA_T;
                 // Particle velocity update
@@ -559,7 +560,7 @@ fn main() {
                 tot_change_in_linear_velocity += rb_impulse / rigid_body.mass;
                 // Angular portion
                 let radius = p.position - rigid_body.position;
-                rigid_body.angular_momentum += rigid_body.inertia_tensor.try_inverse().unwrap()
+                tot_change_in_angular_momentum += rigid_body.inertia_tensor.try_inverse().unwrap()
                     * radius.cross(&rb_impulse);
             }
         }
