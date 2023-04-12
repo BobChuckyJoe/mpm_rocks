@@ -24,6 +24,10 @@ grid_length = sim["grid_length"]
 grid_spacing = sim["grid_spacing"]
 num_particles = sim["num_particles"]
 particle_positions = sim["particle_positions"]
+# Split up deformation gradient into each column, and have each vector plotted separately
+particle_deformation_gradient_x = sim["particle_deformation_gradient_x"]
+particle_deformation_gradient_y = sim["particle_deformation_gradient_y"]
+particle_deformation_gradient_z = sim["particle_deformation_gradient_z"]
 rigid_body_positions = sim["rigid_body_positions"]
 curr_rigid_body_position = rigid_body_positions[TIMESTEP]
 rigid_body_orientations = sim["rigid_body_orientations"]
@@ -42,6 +46,27 @@ for i in range(num_particles):
     particle_pos.append(np.array(particle_positions[TIMESTEP][i]))
 particle_point_cloud = ps.register_point_cloud("particle_positions", np.array(particle_pos))
 
+# Particle deformation gradients
+particle_def_grad_x = []
+for i in range(len(particle_deformation_gradient_x[TIMESTEP])):
+    particle_def_grad_x.append(np.array(particle_deformation_gradient_x[TIMESTEP][i]))
+particle_def_grad_x = np.array(particle_def_grad_x)
+# print(particle_def_grad_x.shape)
+particle_point_cloud.add_vector_quantity("particle_deformation_gradient_x", particle_def_grad_x, vectortype="ambient", length=1)
+
+
+particle_def_grad_y = []
+for i in range(len(particle_deformation_gradient_y[TIMESTEP])):
+    particle_def_grad_y.append(np.array(particle_deformation_gradient_y[TIMESTEP][i]))
+particle_def_grad_y = np.array(particle_def_grad_y)
+particle_point_cloud.add_vector_quantity("particle_deformation_gradient_y", particle_def_grad_y, vectortype="ambient", length=1)
+
+particle_def_grad_z = []
+for i in range(len(particle_deformation_gradient_z[TIMESTEP])):
+    particle_def_grad_z.append(np.array(particle_deformation_gradient_z[TIMESTEP][i]))
+particle_def_grad_z = np.array(particle_def_grad_z)
+particle_point_cloud.add_vector_quantity("particle_deformation_gradient_z", particle_def_grad_z, vectortype="ambient", length=1)
+
 # Generate node points
 points = []
 for i in range(grid_length):
@@ -49,7 +74,7 @@ for i in range(grid_length):
         for k in range(grid_length):
             points.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 points = np.array(points)
-print(f"The points: {len(points)}")
+# print(f"The points: {len(points)}")
 ps_cloud = ps.register_point_cloud("grid_nodes", points)
 
 # Rigid body mesh
@@ -145,8 +170,8 @@ for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
             grid_v = np.array(sim["grid_velocities"][TIMESTEP][i][j][k])
-            if grid_v[0] != 0 or grid_v[1] != 0 or grid_v[2] != 0:
-                print(f"{grid_v} at {i}, {j}, {k}")
+            # if grid_v[0] != 0 or grid_v[1] != 0 or grid_v[2] != 0:
+            #     print(f"{grid_v} at {i}, {j}, {k}")
             grid_vels.append(np.array(sim["grid_velocities"][TIMESTEP][i][j][k]) * 1e5)
 grid_vels = np.array(grid_vels)
 ps_cloud.add_vector_quantity("grid_vels", grid_vels, radius = 0.001, length = 0.005)
