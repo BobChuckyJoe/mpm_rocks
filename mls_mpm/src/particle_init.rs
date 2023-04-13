@@ -31,7 +31,7 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
             mass: 1.0,
-            density: density,
+            density: 0.0, // This is set later
             deformation_gradient: Matrix3::identity(),
             affinity: false,
             tag: 0,

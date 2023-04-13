@@ -427,6 +427,37 @@ fn main() {
             }
         }
 
+        // Calculate the initial particle density
+        if iteration_num == 0 {
+            for p in particles.iter_mut() {
+                let mut tot_density = 0.0;
+                let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+                for dx in -2..3 {
+                    for dy in -2..3 {
+                        for dz in -2..3 {
+                            let x: i64 = base_coord.0 as i64 + dx;
+                            let y: i64 = base_coord.1 as i64 + dy;
+                            let z: i64 = base_coord.2 as i64 + dz;
+                            if x < 0
+                                || x >= GRID_LENGTH as i64
+                                || y < 0
+                                || y >= GRID_LENGTH as i64
+                                || z < 0
+                                || z >= GRID_LENGTH as i64
+                            {
+                                continue;
+                            }
+                            let x = x as usize;
+                            let y = y as usize;
+                            let z = z as usize;
+                            tot_density += grid[x][y][z].mass
+                                * weighting_function(p.position, (x, y, z)) / GRID_SPACING.powi(3);
+                        }
+                    }
+                }
+            }
+        }
+
         // Grid force calculation using eq 18 from MLS-MPM paper
         for p in particles.iter() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
