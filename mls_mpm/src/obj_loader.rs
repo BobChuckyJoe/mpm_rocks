@@ -1,4 +1,6 @@
 use nalgebra::{Matrix3, UnitQuaternion, Vector3};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 use tobj::{self, Mesh};
 
 use crate::config::RIGID_BODY_PARTICLES_PER_FACE;
@@ -113,8 +115,9 @@ fn create_rigid_particles(rb: &mut RigidBody, num_particles_per_face: Option<usi
         let v2 = rb.vertices[face.1];
         let v3 = rb.vertices[face.2];
         
+        let mut rng = ChaCha8Rng::seed_from_u64(1234);
         for _ in 0..num_p {
-            let p = generate_random_point_on_triangle(v1, v2, v3);
+            let p = generate_random_point_on_triangle(v1, v2, v3, &mut rng);
             rb.rigid_particle_positions.push(p);
             rb.rigid_particle_triangles.push(face_ind);
             // TODO gonna just use surface normals for now...

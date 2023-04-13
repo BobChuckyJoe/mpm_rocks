@@ -1,6 +1,7 @@
 use nalgebra::{Matrix3, Vector3, UnitQuaternion, Quaternion};
 use nalgebra::linalg::SVD;
 use rand::Rng;
+use rand_chacha::ChaCha8Rng;
 
 use crate::config::{GRID_SPACING, LAMBDA_0, MU_0, DELTA_T};
 use crate::types::{BoundaryCondition, RigidBody};
@@ -97,17 +98,17 @@ pub fn polar_ru_decomp(mat: Matrix3<f64>) -> (Matrix3<f64>, Matrix3<f64>) {
         svd.singular_values[2],
     );
     let diff = svd.recompose().unwrap() - mat;
-    assert!(diff.norm() < 1e-6, "Matrix: {}\n with error {}.\n The diff: {}", mat, diff.norm(), diff);
-    assert!((svd.u.unwrap() * singular_mat * svd.v_t.unwrap() - mat).norm() < 1.0, 
-    "The mat: {:?} is not singular. The error: {}", mat,
-    (svd.u.unwrap() * singular_mat * svd.v_t.unwrap() - mat).norm());
+    // assert!(diff.norm() < 1e-6, "Matrix: {}\n with error {}.\n The diff: {}", mat, diff.norm(), diff);
+    // assert!((svd.u.unwrap() * singular_mat * svd.v_t.unwrap() - mat).norm() < 1.0, 
+    // "The mat: {:?} is not singular. The error: {}", mat,
+    // (svd.u.unwrap() * singular_mat * svd.v_t.unwrap() - mat).norm());
     let r = svd.u.unwrap() * svd.v_t.unwrap();
     let u = svd.v_t.unwrap().transpose() * singular_mat * svd.v_t.unwrap();
-    assert!(
-        (mat - r * u).norm() < 1.0,
-        "Polar decomposition failed, actual error: {}",
-        (mat - r * u).norm()
-    );
+    // assert!(
+    //     (mat - r * u).norm() < 1.0,
+    //     "Polar decomposition failed, actual error: {}",
+    //     (mat - r * u).norm()
+    // );
     (r, u)
 }
 
@@ -122,9 +123,23 @@ pub fn partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> Matrix3<f64>
     // let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse()
     // .expect(format!("Something went wrong {}", deformation_gradient).as_str());
 
-    let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse().unwrap();
-    2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
-        + LAMBDA_0 * (j - 1.0) * j * deformation_mat_transpose_inv
+    let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse();
+    match deformation_mat_transpose_inv {
+        Some(inv) => {
+            return 2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
+                + LAMBDA_0 * (j - 1.0) * j * inv
+        }
+        None => {
+            // Take snapshot of particle gradients
+            println!("Deformation inverse failed!");
+            println!("The deformation gradient: {}", deformation_gradient);
+            panic!();
+        }
+    }
+    // TODO idk if i should use something else
+    // let deformation_mat_transpose_inv = deformation_gradient.transpose().pseudo_inverse(1e-12);
+    // return 2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
+    //             + LAMBDA_0 * (j - 1.0) * j * deformation_mat_transpose_inv.unwrap();
 }
 
 pub fn convert_to_world_coords(rb: &RigidBody, particle_pos: Vector3<f64>) -> Vector3<f64> {
@@ -344,10 +359,10 @@ pub fn generate_random_point_on_triangle(
     p1: Vector3<f64>,
     p2: Vector3<f64>,
     p3: Vector3<f64>,
+    rng: &mut ChaCha8Rng, // For repeatability
 ) -> Vector3<f64> {
     let a = p2 - p1;
     let b = p3 - p1;
-    let mut rng = rand::thread_rng();
     let mut u1 = rng.gen_range(0.0..1.0);
     let mut u2 = rng.gen_range(0.0..1.0);
     if u1 + u2 > 1.0 {

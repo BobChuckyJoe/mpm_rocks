@@ -1,3 +1,5 @@
+use std::f64::consts::PI;
+
 use nalgebra::{Matrix3, Vector3};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -5,7 +7,7 @@ use rand_chacha::ChaCha8Rng;
 use crate::config::{INITIAL_DENSITY, N_PARTICLES, SIMULATION_SIZE};
 use crate::types::Particle;
 
-pub fn uniform_sphere_centered_at_middle(radius: f64) -> Vec<Particle> {
+pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Particle> {
     const SEED: u64 = 420;
     let mut rng = ChaCha8Rng::seed_from_u64(SEED);
     // Sample from unit ball using acceptance-rejection sampling
@@ -29,7 +31,7 @@ pub fn uniform_sphere_centered_at_middle(radius: f64) -> Vec<Particle> {
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
             mass: 1.0,
-            density: INITIAL_DENSITY, //TODO I don't think this is correct...
+            density: density,
             deformation_gradient: Matrix3::identity(),
             affinity: false,
             tag: 0,
@@ -37,6 +39,23 @@ pub fn uniform_sphere_centered_at_middle(radius: f64) -> Vec<Particle> {
             particle_normal: Vector3::zeros(),
         };
         points.push(p);
+    }
+    for p in points.iter() {
+        assert!(p.position.x >= 0.0);
+        assert!(p.position.y >= 0.0);
+        assert!(p.position.z >= 0.0);
+        assert!(p.position.x <= SIMULATION_SIZE);
+        assert!(p.position.y <= SIMULATION_SIZE);
+        assert!(p.position.z <= SIMULATION_SIZE);
+    }
+    // Set the mass of each particle according to the density
+    let tot_volume = 4.0 / 3.0 * PI * radius.powi(3);
+    let tot_mass = tot_volume * density;
+    assert!(points.len() != 0);
+    let mass_per_particle = tot_mass / points.len() as f64;
+    
+    for p in points.iter_mut() {
+        p.mass = mass_per_particle;
     }
     points
 }

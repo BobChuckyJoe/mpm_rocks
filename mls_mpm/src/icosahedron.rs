@@ -2,6 +2,8 @@
 use std::collections::HashSet;
 
 use nalgebra::{Matrix3, UnitQuaternion, Vector3};
+use rand::SeedableRng;
+use rand_chacha::ChaCha8Rng;
 
 use crate::config::RIGID_BODY_PARTICLES_PER_FACE;
 use crate::equations::{calculate_inertia_tensor, generate_random_point_on_triangle};
@@ -142,8 +144,9 @@ pub fn create_icosahedron() -> RigidBody {
         let p1 = vertices[face_ind_1];
         let p2 = vertices[face_ind_2];
         let p3 = vertices[face_ind_3];
+        let mut rng = ChaCha8Rng::seed_from_u64(1038);
         for _ in 0..RIGID_BODY_PARTICLES_PER_FACE {
-            let random_point = generate_random_point_on_triangle(p1, p2, p3);
+            let random_point = generate_random_point_on_triangle(p1, p2, p3, &mut rng);
             rigid_particle_positions.push(random_point);
             rigid_particle_triangles.push(face_ind);
             // Calculate surface normal

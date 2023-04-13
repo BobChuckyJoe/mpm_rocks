@@ -16,15 +16,15 @@ use tqdm::tqdm;
 
 use crate::config::{
     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS
+    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
-    convert_world_direction_to_local, get_base_grid_ind, grad_weighting_function,
+    convert_world_direction_to_local, get_base_grid_ind, grad_weighting_function, velocity_projection,
     grid_cell_ind_to_world_coords, partial_psi_partial_f, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
 use crate::icosahedron::create_icosahedron;
-use crate::material_properties::GRANITE_DENSITY;
+use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY};
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
 use crate::serialize::Simulation;
@@ -51,6 +51,9 @@ fn main() {
         Vec::new(),
         Vec::new(),
         Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
         [0.0, 0.0, 0.0],
         Vec::new(),
         Vec::new(),
@@ -58,18 +61,20 @@ fn main() {
         Vec::new(),
         Vec::new(),
         Vec::new(),
+        Vec::new(),
     );
-    let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5);
+    let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, DIRT_DENSITY);
     let mut grid: Vec<Vec<Vec<Gridcell>>> =
         vec![vec![vec![Gridcell::new(); GRID_LENGTH]; GRID_LENGTH]; GRID_LENGTH];
 
     println!("Current directory: {:?}", std::env::current_dir());
 
-    let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH, 1000.0);
+    let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH, GRANITE_DENSITY);
     sim.add_rigid_body_mesh_data(&rigid_body);
     rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
-    rigid_body.angular_momentum = Vector3::new(0.0, 100000.0, 0.0);
+    rigid_body.angular_momentum = Vector3::new(0.0, 0.0, 0.0);
     println!("Orientation: {:?}", rigid_body.orientation);
+    println!("Rigid body mass: {}", rigid_body.mass);
 
     println!("Initialization stuff done!");
     for iteration_num in tqdm(0..N_ITERATIONS) {
@@ -79,6 +84,9 @@ fn main() {
         // println!("Rigid body orientation: {:?}", rigid_body.orientation);
         // println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
         // println!("particle 0 velocity: {:?}", particles[0].velocity);
+        // TODO Remove later
+        rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
+    
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
             // Write the locations every 40 miliseconds, which corresponds to 25 fps
             sim.add_particle_pos(&particles);
@@ -193,7 +201,7 @@ fn main() {
             }
         }
         */
-        // TODO rigid body stuff
+        // Calculate Colored Distance Field for rigid body
         for ind in 0..rigid_body.rigid_particle_positions.len() {
             // Convert to world_coords
             let p_pos =
@@ -359,19 +367,18 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
-                        let gridcell = &mut grid[x][y][z];
                         // Check compatibility. If they're not nearby, then don't need to check compatibility?
-                        if gridcell.affinity {
-                            if gridcell.distance_sign != p.tag {
+                        if grid[x][y][z].affinity {
+                            if grid[x][y][z].distance_sign != p.tag {
                                 continue;
                             }    
                         }
-                        gridcell.mass += p.mass * weighting_function(p.position, (x, y, z));
-                        assert!(gridcell.mass == grid[x][y][z].mass);
+                        grid[x][y][z].mass += p.mass * weighting_function(p.position, (x, y, z));
                     }
                 }
             }
         }
+        
         //velocity
         for p in particles.iter() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -398,6 +405,12 @@ fn main() {
                         // Check compatibility
                         if gridcell.affinity {
                             if gridcell.distance_sign != p.tag {
+                                // TODO Possibly sus
+                                // let gridcell_pos = Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
+                                // gridcell.velocity += p.mass
+                                //     * weighting_function(p.position, (x, y, z))
+                                //     * (proj_r(&rigid_body, p.velocity, p.particle_normal, gridcell_pos)
+                                //     + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
                                 continue;
                             }
                         }
@@ -473,7 +486,7 @@ fn main() {
         for p in particles.iter_mut() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
             // Currently using sticky boundary
-            let v_tilde = DELTA_T * BOUNDARY_C * p.particle_normal;
+            let v_tilde = velocity_projection(&rigid_body, p.position) + (DELTA_T * BOUNDARY_C * p.particle_normal);
             let mut velocity = Vector3::new(0.0, 0.0, 0.0);
             let mut b_new = Matrix3::<f64>::zeros();
             for dx in -2..3 {
@@ -631,7 +644,22 @@ fn main() {
             },
             None => {},
         }
-        
+        match OUTPUT_PARTICLE_DEFORMATION_GRADIENT {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_particle_deformation_gradients(&particles);
+                }
+            },
+            None => {},
+        }
+        match OUTPUT_GRID_FORCES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_forces(&grid);
+                }
+            },
+            None => {},
+        }
     }
     // Since I'm dropping frames, the total number of "iterations" is different. Need to rename
     sim.num_iterations = sim.particle_positions.len();
