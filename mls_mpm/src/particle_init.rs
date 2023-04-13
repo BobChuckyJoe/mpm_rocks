@@ -4,7 +4,7 @@ use nalgebra::{Matrix3, Vector3};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 
-use crate::config::{INITIAL_DENSITY, N_PARTICLES, SIMULATION_SIZE};
+use crate::config::{N_PARTICLES, SIMULATION_SIZE};
 use crate::types::Particle;
 
 pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Particle> {
@@ -32,7 +32,8 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
             apic_b: Matrix3::zeros(),
             mass: 1.0,
             density: 0.0, // This is set later
-            deformation_gradient: Matrix3::identity(),
+            f_e: Matrix3::identity(),
+            f_p: Matrix3::identity(),
             affinity: false,
             tag: 0,
             particle_distance: 0.0,

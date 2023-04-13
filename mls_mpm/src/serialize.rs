@@ -100,17 +100,18 @@ impl Simulation {
         let mut def_y = Vec::new();
         let mut def_z = Vec::new();
         for p in particles {
-            let x = [p.deformation_gradient[(0,0)], p.deformation_gradient[(1,0)], p.deformation_gradient[(2,0)]];
+            let deformation_gradient = p.f_e * p.f_p;
+            let x = [deformation_gradient[(0,0)], deformation_gradient[(1,0)], deformation_gradient[(2,0)]];
             def_x.push(x);
             def_y.push([
-                p.deformation_gradient[(0,1)],
-                p.deformation_gradient[(1,1)],
-                p.deformation_gradient[(2,1)],
+                deformation_gradient[(0,1)],
+                deformation_gradient[(1,1)],
+                deformation_gradient[(2,1)],
             ]);
             def_z.push([
-                p.deformation_gradient[(0,2)],
-                p.deformation_gradient[(1,2)],
-                p.deformation_gradient[(2,2)],
+                deformation_gradient[(0,2)],
+                deformation_gradient[(1,2)],
+                deformation_gradient[(2,2)],
             ]);
         }
         self.particle_deformation_gradient_x.push(def_x);

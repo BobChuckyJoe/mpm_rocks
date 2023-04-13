@@ -7,7 +7,8 @@ pub struct Particle {
     // Therefore, we will only need to store the B matrix.
     // C = B * D^{-1}
     pub apic_b: Matrix3<f64>,
-    pub deformation_gradient: Matrix3<f64>,
+    pub f_e: Matrix3<f64>, // Elastic part of the deformation gradient
+    pub f_p: Matrix3<f64>, // Plastic part of the deformation gradient
     pub mass: f64,
     pub density: f64,
     pub affinity: bool, // A_{pr} in the MLS MPM paper

@@ -9,7 +9,7 @@ mod tests;
 mod types;
 mod material_properties;
 
-use nalgebra::{Matrix3, Vector3};
+use nalgebra::{Matrix3, Vector3, clamp};
 // use tobj::{load_obj};
 // use obj::{load_obj, Obj};
 use tqdm::tqdm;
@@ -21,10 +21,10 @@ use crate::config::{
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
     convert_world_direction_to_local, get_base_grid_ind, grad_weighting_function, velocity_projection,
-    grid_cell_ind_to_world_coords, partial_psi_partial_f, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
+    grid_cell_ind_to_world_coords, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
 use crate::icosahedron::create_icosahedron;
-use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY};
+use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH};
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
 use crate::serialize::Simulation;
@@ -84,8 +84,6 @@ fn main() {
         // println!("Rigid body orientation: {:?}", rigid_body.orientation);
         // println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
         // println!("particle 0 velocity: {:?}", particles[0].velocity);
-        // TODO Remove later
-        rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
     
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
             // Write the locations every 40 miliseconds, which corresponds to 25 fps
@@ -455,6 +453,7 @@ fn main() {
                         }
                     }
                 }
+                p.density = tot_density;
             }
         }
 
@@ -481,14 +480,14 @@ fn main() {
                         let z = z as usize;
                         let particle_volume = p.mass / p.density;
                         let m_inv = D_INV;
-                        let partial_psi_partial_f = partial_psi_partial_f(p.deformation_gradient);
+                        let partial_psi_partial_f = partial_psi_partial_f(p.f_e, p.f_p);
                         let grid_cell_position =
                             Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
                         grid[x][y][z].force += -weighting_function(p.position, (x, y, z))
                             * particle_volume
                             * m_inv
                             * partial_psi_partial_f
-                            * p.deformation_gradient.transpose()
+                            * (p.f_e * p.f_p).transpose()
                             * (grid_cell_position - p.position);
                     }
                 }
@@ -612,11 +611,30 @@ fn main() {
         // Update particle deformation gradient
         for p in particles.iter_mut() {
             let c_n_plus_1 = p.apic_b * D_INV;
-            let f_new =
-                (Matrix3::<f64>::identity() + DELTA_T * c_n_plus_1) * p.deformation_gradient;
-            p.deformation_gradient = f_new;
-            // TODO Do the clamping thing on the singular values for snow plasticity
-
+            // First, assume all of the deformation is elastic
+            let f_e_new =
+                (Matrix3::<f64>::identity() + DELTA_T * c_n_plus_1) * p.f_e;
+            // Push excess deformation into the plastic part
+            let f_e_new_svd = f_e_new.svd(true, true);
+            let mut f_e_singular = Matrix3::<f64>::new(
+                f_e_new_svd.singular_values[0],
+                0.0,
+                0.0,
+                0.0,
+                f_e_new_svd.singular_values[1],
+                0.0,
+                0.0,
+                0.0,
+                f_e_new_svd.singular_values[2],
+            );
+            let u = f_e_new_svd.u.unwrap();
+            let v_t = f_e_new_svd.v_t.unwrap();
+            f_e_singular[(0,0)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
+            f_e_singular[(1,1)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
+            f_e_singular[(2,2)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
+            // Update deformation gradient
+            p.f_e = f_e_new_svd.u.unwrap() * f_e_singular * f_e_new_svd.v_t.unwrap();
+            p.f_p = v_t.transpose() * f_e_singular.try_inverse().unwrap() * u.transpose() * p.f_p;
             // Particle advection
             p.position += DELTA_T * p.velocity;
         }

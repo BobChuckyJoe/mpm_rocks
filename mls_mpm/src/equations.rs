@@ -3,7 +3,7 @@ use nalgebra::linalg::SVD;
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
-use crate::config::{GRID_SPACING, LAMBDA_0, MU_0, DELTA_T};
+use crate::config::{GRID_SPACING, DELTA_T};
 use crate::types::{BoundaryCondition, RigidBody};
 
 pub fn get_base_grid_ind(p: &Vector3<f64>, grid_spacing: f64) -> (usize, usize, usize) {
@@ -114,33 +114,33 @@ pub fn polar_ru_decomp(mat: Matrix3<f64>) -> (Matrix3<f64>, Matrix3<f64>) {
 
 // There is a typo in the 88-line mls mpm paper implementation I believe
 // This implementation is according to eq 52 of mpm course notes
-pub fn partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> Matrix3<f64> {
-    let (r, _u) = polar_ru_decomp(deformation_gradient);
-    let j = deformation_gradient.determinant();
-    // When to use inverse vs when to use pseudo-inverse?
+// pub fn partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> Matrix3<f64> {
+//     let (r, _u) = polar_ru_decomp(deformation_gradient);
+//     let j = deformation_gradient.determinant();
+//     // When to use inverse vs when to use pseudo-inverse?
     
-    // Interestingly, this seems much slower (roughly 5x slower...)
-    // let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse()
-    // .expect(format!("Something went wrong {}", deformation_gradient).as_str());
+//     // Interestingly, this seems much slower (roughly 5x slower...)
+//     // let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse()
+//     // .expect(format!("Something went wrong {}", deformation_gradient).as_str());
 
-    let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse();
-    match deformation_mat_transpose_inv {
-        Some(inv) => {
-            return 2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
-                + LAMBDA_0 * (j - 1.0) * j * inv
-        }
-        None => {
-            // Take snapshot of particle gradients
-            println!("Deformation inverse failed!");
-            println!("The deformation gradient: {}", deformation_gradient);
-            panic!();
-        }
-    }
-    // TODO idk if i should use something else
-    // let deformation_mat_transpose_inv = deformation_gradient.transpose().pseudo_inverse(1e-12);
-    // return 2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
-    //             + LAMBDA_0 * (j - 1.0) * j * deformation_mat_transpose_inv.unwrap();
-}
+//     let deformation_mat_transpose_inv = deformation_gradient.transpose().try_inverse();
+//     match deformation_mat_transpose_inv {
+//         Some(inv) => {
+//             return 2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
+//                 + LAMBDA_0 * (j - 1.0) * j * inv
+//         }
+//         None => {
+//             // Take snapshot of particle gradients
+//             println!("Deformation inverse failed!");
+//             println!("The deformation gradient: {}", deformation_gradient);
+//             panic!();
+//         }
+//     }
+//     // TODO idk if i should use something else
+//     // let deformation_mat_transpose_inv = deformation_gradient.transpose().pseudo_inverse(1e-12);
+//     // return 2.0 * MU_0 * (deformation_gradient - r) * deformation_gradient.transpose()
+//     //             + LAMBDA_0 * (j - 1.0) * j * deformation_mat_transpose_inv.unwrap();
+// }
 
 pub fn convert_to_world_coords(rb: &RigidBody, particle_pos: Vector3<f64>) -> Vector3<f64> {
     rb.orientation.to_rotation_matrix() * particle_pos + rb.position
