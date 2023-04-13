@@ -8,7 +8,7 @@ import polyscope as ps
 
 from math_utils import *
 
-TIMESTEP = 0
+TIMESTEP = 1135
 RENDER_DIST_FIELD = False
 ps.init()
 # Consistent with blender
@@ -24,6 +24,10 @@ grid_length = sim["grid_length"]
 grid_spacing = sim["grid_spacing"]
 num_particles = sim["num_particles"]
 particle_positions = sim["particle_positions"]
+# Split up deformation gradient into each column, and have each vector plotted separately
+particle_deformation_gradient_x = sim["particle_deformation_gradient_x"]
+particle_deformation_gradient_y = sim["particle_deformation_gradient_y"]
+particle_deformation_gradient_z = sim["particle_deformation_gradient_z"]
 rigid_body_positions = sim["rigid_body_positions"]
 curr_rigid_body_position = rigid_body_positions[TIMESTEP]
 rigid_body_orientations = sim["rigid_body_orientations"]
@@ -42,6 +46,27 @@ for i in range(num_particles):
     particle_pos.append(np.array(particle_positions[TIMESTEP][i]))
 particle_point_cloud = ps.register_point_cloud("particle_positions", np.array(particle_pos))
 
+# Particle deformation gradients
+particle_def_grad_x = []
+for i in range(len(particle_deformation_gradient_x[0])):
+    particle_def_grad_x.append(np.array(particle_deformation_gradient_x[0][i]))
+particle_def_grad_x = np.array(particle_def_grad_x)
+# print(particle_def_grad_x.shape)
+particle_point_cloud.add_vector_quantity("particle_deformation_gradient_x", particle_def_grad_x, vectortype="ambient", length=1)
+
+
+particle_def_grad_y = []
+for i in range(len(particle_deformation_gradient_y[0])):
+    particle_def_grad_y.append(np.array(particle_deformation_gradient_y[0][i]))
+particle_def_grad_y = np.array(particle_def_grad_y)
+particle_point_cloud.add_vector_quantity("particle_deformation_gradient_y", particle_def_grad_y, vectortype="ambient", length=1)
+
+particle_def_grad_z = []
+for i in range(len(particle_deformation_gradient_z[0])):
+    particle_def_grad_z.append(np.array(particle_deformation_gradient_z[0][i]))
+particle_def_grad_z = np.array(particle_def_grad_z)
+particle_point_cloud.add_vector_quantity("particle_deformation_gradient_z", particle_def_grad_z, vectortype="ambient", length=1)
+
 # Generate node points
 points = []
 for i in range(grid_length):
@@ -49,7 +74,7 @@ for i in range(grid_length):
         for k in range(grid_length):
             points.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 points = np.array(points)
-print(f"The points: {len(points)}")
+# print(f"The points: {len(points)}")
 ps_cloud = ps.register_point_cloud("grid_nodes", points)
 
 # Rigid body mesh
@@ -85,7 +110,7 @@ grid_affinities_locs = []
 for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
-            if grid_affinities[TIMESTEP][i][j][k]:
+            if grid_affinities[0][i][j][k]:
                 grid_affinities_locs.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(grid_affinities_locs) > 0:
     ps.register_point_cloud("grid_affinities", np.array(grid_affinities_locs))
@@ -95,7 +120,7 @@ neg_dist = []
 for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
-            if grid_distance_signs[TIMESTEP][i][j][k] == -1:
+            if grid_distance_signs[0][i][j][k] == -1:
                 neg_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(neg_dist) != 0:
     ps.register_point_cloud("neg_dist", np.array(neg_dist))
@@ -104,7 +129,7 @@ pos_dist = []
 for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
-            if grid_distance_signs[TIMESTEP][i][j][k] == 1:
+            if grid_distance_signs[0][i][j][k] == 1:
                 pos_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(pos_dist) != 0:
     ps.register_point_cloud("pos_dist", np.array(pos_dist))
@@ -113,7 +138,7 @@ zero_dist = []
 for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
-            if grid_distance_signs[TIMESTEP][i][j][k] == 0:
+            if grid_distance_signs[0][i][j][k] == 0:
                 zero_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(zero_dist) != 0:
     ps.register_point_cloud("zero_dist", np.array(zero_dist))
@@ -144,12 +169,20 @@ grid_vels = []
 for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
-            grid_v = np.array(sim["grid_velocities"][TIMESTEP][i][j][k])
-            if grid_v[0] != 0 or grid_v[1] != 0 or grid_v[2] != 0:
-                print(f"{grid_v} at {i}, {j}, {k}")
-            grid_vels.append(np.array(sim["grid_velocities"][TIMESTEP][i][j][k]) * 1e5)
+            grid_v = np.array(sim["grid_velocities"][0][i][j][k])
+            # if grid_v[0] != 0 or grid_v[1] != 0 or grid_v[2] != 0:
+            #     print(f"{grid_v} at {i}, {j}, {k}")
+            grid_vels.append(np.array(sim["grid_velocities"][0][i][j][k]) * 1e5)
 grid_vels = np.array(grid_vels)
-ps_cloud.add_vector_quantity("grid_vels", grid_vels, radius = 0.001, length = 0.005)
+ps_cloud.add_vector_quantity("grid_vels", grid_vels, vectortype="ambient", length=1)
+
+# Grid forces
+grid_f = []
+for i in range(grid_length):
+    for j in range(grid_length):
+        for k in range(grid_length):
+            grid_f.append(np.array(sim["grid_forces"][0][i][j][k]) * 1e5)
+ps_cloud.add_vector_quantity("grid_forces", np.array(grid_f), vectortype="ambient", length=1)
 
 # ps_cloud.add_scalar_quantity("dist")
 ps.show()
