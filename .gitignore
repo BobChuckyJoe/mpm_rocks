@@ -17,3 +17,4 @@ venv/
 .polyscope.ini
 imgui.ini
 __pychache__/
+openvdb-10.0.1/
