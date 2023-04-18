@@ -9,6 +9,8 @@ mod tests;
 mod types;
 mod material_properties;
 
+use std::collections::HashSet;
+
 use nalgebra::{Matrix3, Vector3, clamp};
 // use tobj::{load_obj};
 // use obj::{load_obj, Obj};
@@ -16,7 +18,7 @@ use tqdm::tqdm;
 
 use crate::config::{
     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES
+    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES, TIME_TO_SAVE
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
@@ -24,7 +26,7 @@ use crate::equations::{
     grid_cell_ind_to_world_coords, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
 use crate::icosahedron::create_icosahedron;
-use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH};
+use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f};
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
 use crate::serialize::Simulation;
@@ -35,6 +37,7 @@ use crate::types::{Gridcell, Particle, RigidBody};
 //                            0.0, 3.0 / GRID_SPACING / GRID_SPACING, 0.0,
 //                            0.0, 0.0, 3.0 / GRID_SPACING / GRID_SPACING);
 const D_INV: f64 = 3.0 / GRID_SPACING / GRID_SPACING; // Constant since we're using a cubic spline
+
 
 fn main() {
     let mut sim = Simulation::new(
@@ -84,12 +87,25 @@ fn main() {
         // println!("Rigid body orientation: {:?}", rigid_body.orientation);
         // println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
         // println!("particle 0 velocity: {:?}", particles[0].velocity);
-    
+        
+        let should_save = iteration_num % 20 == 0;
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
-            // Write the locations every 40 miliseconds, which corresponds to 25 fps
-            sim.add_particle_pos(&particles);
-            sim.add_rigid_body_stuff(&rigid_body);
-        // }
+        match TIME_TO_SAVE {
+            Some(x) => {
+                if iteration_num == x || should_save {
+                    sim.add_particle_pos(&particles);
+                    sim.add_rigid_body_stuff(&rigid_body);
+                }
+            }
+            None  => {
+                if should_save{
+                    // Write the locations every 40 miliseconds, which corresponds to 25 fps
+                    sim.add_particle_pos(&particles);
+                    sim.add_rigid_body_stuff(&rigid_body);
+                }
+            }
+        }
+        
         // Reset grid
         for i in 0..GRID_LENGTH {
             for j in 0..GRID_LENGTH {
@@ -97,7 +113,10 @@ fn main() {
                     grid[i][j][k].reset_values();
                 }
             }
-        }
+        }   
+        // rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
+
+        
         // Update rigid body velocity and momentum at the very end!
         let mut tot_change_in_angular_momentum = Vector3::new(0.0, 0.0, 0.0);
         let mut tot_change_in_linear_velocity = Vector3::new(0.0, 0.0, 0.0);
@@ -257,6 +276,12 @@ fn main() {
                 // Negative means inside the rigid body
                 if (grid_cell_loc - proj).dot(&rp_normal) < 0.0 {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = -1;
+                    if (grid_cell_ind_to_world_coords(neighbor_i, neighbor_j, neighbor_k) - rigid_body.position).norm() > 2.0 {
+                        println!("WTF");
+                        println!("Current grid cell: {:?}", (neighbor_i, neighbor_j, neighbor_k));
+                        println!("grid cell world position: {}", grid_cell_ind_to_world_coords(neighbor_i, neighbor_j, neighbor_k));
+                        println!("rigid particle position: {}", p_pos);
+                    }
                     // println!("grid cell {:?} is now at distance -{}", (neighbor_i, neighbor_j, neighbor_k), dist);
                 } else {
                     grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = 1;
@@ -457,6 +482,7 @@ fn main() {
             }
         }
 
+        let mut should_break = false;
         // Grid force calculation using eq 18 from MLS-MPM paper
         for p in particles.iter() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -479,8 +505,12 @@ fn main() {
                         let y = y as usize;
                         let z = z as usize;
                         let particle_volume = p.mass / p.density;
+                        if x == 0 && y == 0 && z == 0 {
+                            println!("This cell shouldn't be affected");
+                            println!("Particle pos: {}", p.position);
+                        }
                         let m_inv = D_INV;
-                        let partial_psi_partial_f = partial_psi_partial_f(p.f_e, p.f_p);
+                        let partial_psi_partial_f = neo_hookean_partial_psi_partial_f(p.f_e * p.f_p);
                         let grid_cell_position =
                             Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
                         grid[x][y][z].force += -weighting_function(p.position, (x, y, z))
@@ -489,34 +519,97 @@ fn main() {
                             * partial_psi_partial_f
                             * (p.f_e * p.f_p).transpose()
                             * (grid_cell_position - p.position);
+                        // if p.f_e.determinant() < 0.1 {
+                        //     println!("x y z: {} {} {}", x, y, z);
+                        //     println!("Big compression bad Det: {}", {p.f_e.determinant()});
+                        //     println!("Particle position: {:?}", p.position);
+                        //     println!("Particle deformation gradient: {:?}", p.f_e);
+                        //     println!("particle volume: {}", particle_volume);
+                        //     println!("m_inv: {}", m_inv);
+                        //     println!("partial_psi_partial_f: {}", partial_psi_partial_f);
+                        //     println!("grid_cell_position: {}", grid_cell_position);
+                        //     println!("p.f_e * p.f_p: {}", p.f_e * p.f_p);
+                        //     println!("grid_cell_position - p.position: {}", grid_cell_position - p.position);
+                        //     let diff = -weighting_function(p.position, (x, y, z))
+                        //     * particle_volume
+                        //     * m_inv
+                        //     * partial_psi_partial_f
+                        //     * (p.f_e * p.f_p).transpose()
+                        //     * (grid_cell_position - p.position);
+                        //     println!("diff: {}", diff);
+                        //     should_break = true;
+                        // }
                     }
                 }
+
             }
+            // if (p.f_e.determinant() < 0.1) {
+            //     panic!();
+            // }
         }
+        // println!("Grid force of grid[20][17][9]: {}", grid[20][17][9].force);
+        // if should_break {
+        //     panic!();
+        // }
         // Grid velocity update
         // It says that the grid position should not actually change, but the grid velocity should.
         // See eq 182 of mpm course
         // I'll just do explicit Euler for now
-        for i in 0..GRID_LENGTH {
-            for j in 0..GRID_LENGTH {
-                for k in 0..GRID_LENGTH {
-                    if grid[i][j][k].mass == 0.0 {
-                        continue;
+        // for i in 0..GRID_LENGTH {
+        //     for j in 0..GRID_LENGTH {
+        //         for k in 0..GRID_LENGTH {
+        //             if grid[i][j][k].mass == 0.0 {
+        //                 continue;
+        //             }
+        //             let grid_force = grid[i][j][k].force;
+        //             let grid_mass = grid[i][j][k].mass;
+        //             grid[i][j][k].velocity += DELTA_T * grid_force / grid_mass;
+        //             // Gravity
+        //             grid[i][j][k].velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+        //         }
+        //     }
+        // }
+        let mut gridcells_to_visit: HashSet<(usize, usize, usize)> = HashSet::new();
+        for p in particles.iter() {
+            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+            for dx in -2..3 {
+                for dy in -2..3 {
+                    for dz in -2..3 {
+                        let x: i64 = base_coord.0 as i64 + dx;
+                        let y: i64 = base_coord.1 as i64 + dy;
+                        let z: i64 = base_coord.2 as i64 + dz;
+                        if x < 0
+                            || x >= GRID_LENGTH as i64
+                            || y < 0
+                            || y >= GRID_LENGTH as i64
+                            || z < 0
+                            || z >= GRID_LENGTH as i64
+                        {
+                            continue;
+                        }
+                        let x = x as usize;
+                        let y = y as usize;
+                        let z = z as usize;
+                        gridcells_to_visit.insert((x, y, z));
                     }
-                    let grid_force = grid[i][j][k].force;
-                    let grid_mass = grid[i][j][k].mass;
-                    grid[i][j][k].velocity += DELTA_T * grid_force / grid_mass;
-                    // Gravity
-                    grid[i][j][k].velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
                 }
             }
+        }
+        for (x, y, z) in gridcells_to_visit {
+            if grid[x][y][z].mass == 0.0 {
+                continue;
+            }
+            let grid_force = grid[x][y][z].force;
+            let grid_mass = grid[x][y][z].mass;
+            grid[x][y][z].velocity += DELTA_T * grid_force / grid_mass;
+            // Gravity
+            grid[x][y][z].velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
         }
 
         // g2p
         for p in particles.iter_mut() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            // Currently using sticky boundary
-            let v_tilde = velocity_projection(&rigid_body, p.position) + (DELTA_T * BOUNDARY_C * p.particle_normal);
+            // Sum these grid cells in the support of the weighting function
             let mut velocity = Vector3::new(0.0, 0.0, 0.0);
             let mut b_new = Matrix3::<f64>::zeros();
             for dx in -2..3 {
@@ -534,15 +627,23 @@ fn main() {
                         {
                             continue;
                         }
+            
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
+
                         let gridcell = grid[x][y][z];
+
+                        
                         // Check compatibility
                         if gridcell.distance_sign != p.tag && gridcell.affinity && p.affinity {
                             // Incompatible
-                            velocity += weighting_function(p.position, base_coord) * v_tilde;
-                            b_new += weighting_function(p.position, base_coord)
+                            let v_tilde = proj_r(&rigid_body, p.velocity, p.particle_normal, grid_cell_ind_to_world_coords(x, y, z))
+                             + (DELTA_T * BOUNDARY_C * p.particle_normal);
+                        
+
+                            velocity += weighting_function(p.position, (x, y, z)) * v_tilde;
+                            b_new += weighting_function(p.position, (x, y, z))
                                 * v_tilde
                                 * (grid_cell_ind_to_world_coords(x, y, z) - p.position).transpose();
                             
@@ -555,6 +656,16 @@ fn main() {
                                 grid_cell_ind_to_world_coords(x, y, z),
                             );
                             let impulse = p.mass * (p.velocity - pr) * weighting_function(p.position, (x,y, z));
+                            if iteration_num == N_ITERATIONS - 1 {
+                                println!("p.mass: {}", p.mass);
+                                println!("p.velocity: {:?}", p.velocity);
+                                println!("pr: {:?}", pr);
+                                println!("particle base coord: {:?}", base_coord);
+                                println!("grid_coord: {:?}", (x,y, z));
+                                println!("particle_pos - grid_pos: {}", p.position - grid_cell_ind_to_world_coords(x, y, z));
+                                println!("weighting_function: {}", weighting_function(p.position, (x,y, z)));
+                                println!("impulse: {:?}", impulse);
+                            }
                             // Linear portion ezpz
                             tot_change_in_linear_velocity += impulse / rigid_body.mass;
                             
@@ -577,7 +688,7 @@ fn main() {
             p.velocity = velocity;
             // p.velocity += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
             p.apic_b = b_new;
-
+            
             // Boundary conditions
             if p.position.x < BOUNDARY
                 || p.position.y < BOUNDARY
@@ -587,8 +698,52 @@ fn main() {
                 || p.position.z > SIMULATION_SIZE - BOUNDARY
             {
                 p.velocity = Vector3::new(0.0, 0.0, 0.0);
+                p.apic_b = Matrix3::zeros();
+                p.position.x = p.position.x.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
+                p.position.y = p.position.y.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
+                p.position.z = p.position.z.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
             }
         }
+        println!("Rigid body total change in linear velocity at iteration {}: {:?}", iteration_num, tot_change_in_linear_velocity);
+
+
+        // Update particle deformation gradient
+        for p in particles.iter_mut() {
+            let c_n_plus_1 = p.apic_b * D_INV;
+            // First, assume all of the deformation is elastic
+            let f_e_new =
+                (Matrix3::<f64>::identity() + DELTA_T * c_n_plus_1) * p.f_e;
+            if f_e_new[(0,0)] > 1e5 {
+                println!("Huge deformation matrix!");
+                println!("f_e_new: {:?}", f_e_new);
+            }
+            
+            // Push excess deformation into the plastic part
+            // let f_e_new_svd = f_e_new.svd(true, true);
+            // let mut f_e_singular = Matrix3::<f64>::new(
+            //     f_e_new_svd.singular_values[0],
+            //     0.0,
+            //     0.0,
+            //     0.0,
+            //     f_e_new_svd.singular_values[1],
+            //     0.0,
+            //     0.0,
+            //     0.0,
+            //     f_e_new_svd.singular_values[2],
+            // );
+            // let u = f_e_new_svd.u.unwrap();
+            // let v_t = f_e_new_svd.v_t.unwrap();
+            // f_e_singular[(0,0)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
+            // f_e_singular[(1,1)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
+            // f_e_singular[(2,2)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
+            // // Update deformation gradient
+            // p.f_e = f_e_new_svd.u.unwrap() * f_e_singular * f_e_new_svd.v_t.unwrap();
+            // p.f_p = v_t.transpose() * f_e_singular.try_inverse().unwrap() * u.transpose() * p.f_p;
+            p.f_e = f_e_new;
+            // Particle advection
+            p.position += DELTA_T * p.velocity;
+        }
+
         // Penalty impulse
         for p in particles.iter_mut() {
             if p.particle_distance < 0.0 {
@@ -607,41 +762,15 @@ fn main() {
                     * radius.cross(&rb_impulse);
             }
         }
-
-        // Update particle deformation gradient
-        for p in particles.iter_mut() {
-            let c_n_plus_1 = p.apic_b * D_INV;
-            // First, assume all of the deformation is elastic
-            let f_e_new =
-                (Matrix3::<f64>::identity() + DELTA_T * c_n_plus_1) * p.f_e;
-            // Push excess deformation into the plastic part
-            let f_e_new_svd = f_e_new.svd(true, true);
-            let mut f_e_singular = Matrix3::<f64>::new(
-                f_e_new_svd.singular_values[0],
-                0.0,
-                0.0,
-                0.0,
-                f_e_new_svd.singular_values[1],
-                0.0,
-                0.0,
-                0.0,
-                f_e_new_svd.singular_values[2],
-            );
-            let u = f_e_new_svd.u.unwrap();
-            let v_t = f_e_new_svd.v_t.unwrap();
-            f_e_singular[(0,0)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
-            f_e_singular[(1,1)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
-            f_e_singular[(2,2)] = clamp(f_e_singular[(0,0)], 1.0 - CRITICAL_COMPRESSION, 1.0 + CRITICAL_STRETCH);
-            // Update deformation gradient
-            p.f_e = f_e_new_svd.u.unwrap() * f_e_singular * f_e_new_svd.v_t.unwrap();
-            p.f_p = v_t.transpose() * f_e_singular.try_inverse().unwrap() * u.transpose() * p.f_p;
-            // Particle advection
-            p.position += DELTA_T * p.velocity;
-        }
         
         // Adding gravity here... is there better way to do this?
         tot_change_in_linear_velocity += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
         
+        
+        // Rigid body velocity/angular momentum update
+        rigid_body.velocity += tot_change_in_linear_velocity;
+        rigid_body.angular_momentum += tot_change_in_angular_momentum;
+
         // Boundary condition for rigid body
         if rigid_body.position.x < BOUNDARY
             || rigid_body.position.y < BOUNDARY
@@ -652,9 +781,6 @@ fn main() {
         {
             rigid_body.velocity = Vector3::new(0.0, 0.0, 0.0);
         }
-        // Rigid body velocity/angular momentum update
-        rigid_body.velocity += tot_change_in_linear_velocity;
-        rigid_body.angular_momentum += tot_change_in_angular_momentum;
 
         // Rigid body advection
         rigid_body.position += DELTA_T * rigid_body.velocity;
