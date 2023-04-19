@@ -20,10 +20,10 @@ pub fn iterate_over_3x3(start: (usize, usize, usize)) -> Vec<(usize, usize, usiz
                 {
                     inds.push((new_i as usize, new_j as usize, new_k as usize));
                 }
-                inds.push((start.0 + i, start.1 + j, start.2 + k));
             }
         }
     }
+    assert!(inds.len() <= 27);
     inds
 }
 
@@ -76,4 +76,15 @@ pub fn calculate_face_normal(a: Vector3<f64>, b: Vector3<f64>, c: Vector3<f64>) 
     let ab = b - a;
     let ac = c - a;
     ab.cross(&ac).normalize()
+}
+
+/// Calculate MSE between two matrices
+pub fn mse(a: &Matrix3<f64>, b: &Matrix3<f64>) -> f64 {
+    let mut sum = 0.0;
+    for i in 0..3 {
+        for j in 0..3 {
+            sum += (a[(i, j)] - b[(i, j)]).powi(2);
+        }
+    }
+    sum / 9.0
 }

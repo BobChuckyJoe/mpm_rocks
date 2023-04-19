@@ -7,6 +7,9 @@ use crate::config::{GRID_SPACING, DELTA_T};
 use crate::types::{BoundaryCondition, RigidBody};
 
 pub fn get_base_grid_ind(p: &Vector3<f64>, grid_spacing: f64) -> (usize, usize, usize) {
+    assert!(p.x.is_finite());
+    assert!(p.y.is_finite());
+    assert!(p.z.is_finite());
     return (
         (p.x / grid_spacing).floor() as usize,
         (p.y / grid_spacing).floor() as usize,
