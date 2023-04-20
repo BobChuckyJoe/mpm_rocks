@@ -26,7 +26,7 @@ use crate::equations::{
     grid_cell_ind_to_world_coords, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
 use crate::icosahedron::create_icosahedron;
-use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f};
+use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f, project_to_yield_surface, H_0, H_2, H_3, H_1};
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
 use crate::serialize::Simulation;
@@ -75,7 +75,7 @@ fn main() {
     let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH, GRANITE_DENSITY);
     sim.add_rigid_body_mesh_data(&rigid_body);
     rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
-    rigid_body.angular_momentum = Vector3::new(0.0, 0.0, 0.0);
+    rigid_body.angular_momentum = Vector3::new(0.0, 10000.0, 0.0);
     println!("Orientation: {:?}", rigid_body.orientation);
     println!("Rigid body mass: {}", rigid_body.mass);
 
@@ -656,16 +656,7 @@ fn main() {
                                 grid_cell_ind_to_world_coords(x, y, z),
                             );
                             let impulse = p.mass * (p.velocity - pr) * weighting_function(p.position, (x,y, z));
-                            if iteration_num == N_ITERATIONS - 1 {
-                                println!("p.mass: {}", p.mass);
-                                println!("p.velocity: {:?}", p.velocity);
-                                println!("pr: {:?}", pr);
-                                println!("particle base coord: {:?}", base_coord);
-                                println!("grid_coord: {:?}", (x,y, z));
-                                println!("particle_pos - grid_pos: {}", p.position - grid_cell_ind_to_world_coords(x, y, z));
-                                println!("weighting_function: {}", weighting_function(p.position, (x,y, z)));
-                                println!("impulse: {:?}", impulse);
-                            }
+                            
                             // Linear portion ezpz
                             tot_change_in_linear_velocity += impulse / rigid_body.mass;
                             
@@ -704,20 +695,37 @@ fn main() {
                 p.position.z = p.position.z.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
             }
         }
-        println!("Rigid body total change in linear velocity at iteration {}: {:?}", iteration_num, tot_change_in_linear_velocity);
-
-
         // Update particle deformation gradient
         for p in particles.iter_mut() {
             let c_n_plus_1 = p.apic_b * D_INV;
             // First, assume all of the deformation is elastic
-            let f_e_new =
+            let f_e_hat_new =
                 (Matrix3::<f64>::identity() + DELTA_T * c_n_plus_1) * p.f_e;
-            if f_e_new[(0,0)] > 1e5 {
-                println!("Huge deformation matrix!");
-                println!("f_e_new: {:?}", f_e_new);
+            let svd = f_e_hat_new.svd(true, true);
+            // Sand plasticity
+            let (new_singular_vals, case, delta_gamma) = project_to_yield_surface(svd, p.alpha);
+            p.f_e = svd.u.unwrap() * new_singular_vals * svd.v_t.unwrap();
+            p.f_p = p.f_e.try_inverse().unwrap() * f_e_hat_new * p.f_p;
+            // Hardening
+            let mut delta_q = 0.0;
+            match case {
+                1 => {
+                    delta_q = 0.0;
+                }
+                2 => {
+                    let epsilon_frob_norm = (new_singular_vals[(0, 0)].ln().powi(2) + new_singular_vals[(1, 1)].ln().powi(2) + new_singular_vals[(2, 2)].ln().powi(2)).sqrt();
+                    delta_q = epsilon_frob_norm;
+                }
+                3 => {
+                    delta_q = delta_gamma;
+                }
+                _ => {
+                    panic!("Invalid case");
+                }
             }
-            
+            p.q = p.q + delta_q;
+            let phi_f = H_0 + (H_1 * p.q - H_3) * (-H_2 * p.q).exp();
+            p.alpha = (2.0 / 3.0 as f64).sqrt() * (2.0 * phi_f) / (3.0 - phi_f.sin());
             // Push excess deformation into the plastic part
             // let f_e_new_svd = f_e_new.svd(true, true);
             // let mut f_e_singular = Matrix3::<f64>::new(
@@ -739,7 +747,6 @@ fn main() {
             // // Update deformation gradient
             // p.f_e = f_e_new_svd.u.unwrap() * f_e_singular * f_e_new_svd.v_t.unwrap();
             // p.f_p = v_t.transpose() * f_e_singular.try_inverse().unwrap() * u.transpose() * p.f_p;
-            p.f_e = f_e_new;
             // Particle advection
             p.position += DELTA_T * p.velocity;
         }

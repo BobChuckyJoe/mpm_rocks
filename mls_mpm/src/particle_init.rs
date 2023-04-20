@@ -5,6 +5,7 @@ use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 
 use crate::config::{N_PARTICLES, SIMULATION_SIZE};
+use crate::material_properties::{H_0, H_1, H_3, H_2};
 use crate::types::Particle;
 
 pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Particle> {
@@ -38,8 +39,17 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
             tag: 0,
             particle_distance: 0.0,
             particle_normal: Vector3::zeros(),
+            q: 0.0,
+            alpha: 0.0,
         };
         points.push(p);
+    }
+    // Calculate alpha for each particle
+    let INIT_Q = 0.0;
+    let phi_f = H_0 + (H_1 * INIT_Q - H_3) * (-H_2 * INIT_Q).exp(); 
+    let alpha = (2.0 / 3.0 as f64).sqrt() * (2.0 * phi_f.sin()) / (3.0 - phi_f.sin());
+    for p in points.iter_mut() {
+        p.alpha = alpha;
     }
     for p in points.iter() {
         assert!(p.position.x >= 0.0);

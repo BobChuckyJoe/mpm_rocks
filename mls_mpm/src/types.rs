@@ -15,6 +15,9 @@ pub struct Particle {
     pub tag: i32,                      // This is the T_{pr} from equation 21
     pub particle_distance: f64, // d_p from 5.3.2 of MLS MPM paper. I'm also assuming that sign(d_p) = T_{ir}
     pub particle_normal: Vector3<f64>, // The particle normal from 5.3.2 of MLS MPM paper
+    // Sand hardening parameters
+    pub q: f64,
+    pub alpha: f64,
 }
 
 #[derive(Copy, Clone)]

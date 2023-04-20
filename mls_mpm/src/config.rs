@@ -1,10 +1,11 @@
 pub const SIMULATION_SIZE: f64 = 10.0;
-pub const GRID_LENGTH: usize = 30;
+pub const GRID_LENGTH: usize = 100;
 pub const GRID_SPACING: f64 = SIMULATION_SIZE / GRID_LENGTH as f64;
 pub const DELTA_T: f64 = 0.001;
-pub const N_PARTICLES: usize = 100;
+pub const N_PARTICLES: usize = 1000;
 pub const N_ITERATIONS: usize = 10000;
 pub const BOUNDARY: f64 = 4.0 * GRID_SPACING; // Particles this close to the boundary have their velocities zeroed out
+pub const DIMENSIONS: usize = 3;
 
 // Path to the rigid body mesh to load
 pub const RIGID_BODY_PATH: &str = "icosahedron.obj";
