@@ -8,7 +8,7 @@ import polyscope as ps
 
 from math_utils import *
 
-TIMESTEP = 50
+TIMESTEP = 245
 RENDER_DIST_FIELD = False
 ps.init()
 # Consistent with blender
