@@ -8,7 +8,7 @@ import polyscope as ps
 
 from math_utils import *
 
-TIMESTEP = 1135
+TIMESTEP = 245
 RENDER_DIST_FIELD = False
 ps.init()
 # Consistent with blender
@@ -29,6 +29,8 @@ particle_deformation_gradient_x = sim["particle_deformation_gradient_x"]
 particle_deformation_gradient_y = sim["particle_deformation_gradient_y"]
 particle_deformation_gradient_z = sim["particle_deformation_gradient_z"]
 rigid_body_positions = sim["rigid_body_positions"]
+
+print(len(rigid_body_positions))
 curr_rigid_body_position = rigid_body_positions[TIMESTEP]
 rigid_body_orientations = sim["rigid_body_orientations"]
 curr_rigid_body_orientation = rigid_body_orientations[TIMESTEP]
@@ -75,7 +77,7 @@ for i in range(grid_length):
             points.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 points = np.array(points)
 # print(f"The points: {len(points)}")
-ps_cloud = ps.register_point_cloud("grid_nodes", points)
+ps_cloud = ps.register_point_cloud("grid_nodes", points, radius = 0.001)
 
 # Rigid body mesh
 world_vert_pos = []
@@ -141,7 +143,7 @@ for i in range(grid_length):
             if grid_distance_signs[0][i][j][k] == 0:
                 zero_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(zero_dist) != 0:
-    ps.register_point_cloud("zero_dist", np.array(zero_dist))
+    ps.register_point_cloud("zero_dist", np.array(zero_dist), enabled=False)
 
 if RENDER_DIST_FIELD:
     vals = []
@@ -170,19 +172,29 @@ for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
             grid_v = np.array(sim["grid_velocities"][0][i][j][k])
-            # if grid_v[0] != 0 or grid_v[1] != 0 or grid_v[2] != 0:
-            #     print(f"{grid_v} at {i}, {j}, {k}")
-            grid_vels.append(np.array(sim["grid_velocities"][0][i][j][k]) * 1e5)
-grid_vels = np.array(grid_vels)
-ps_cloud.add_vector_quantity("grid_vels", grid_vels, vectortype="ambient", length=1)
+            if grid_v[0] is None:
+                print(f"Null velocity at {i} {j} {k}")
+                grid_vels.append(np.array([0, -10, 0]))
+            else:
+                grid_vels.append(np.array(sim["grid_velocities"][0][i][j][k]))
+# Normalize vectors
+max_norm = get_max_norm(grid_vels)
+print(f"Max grid velocity norm: {max_norm}")
+grid_vels = np.array(grid_vels) / max_norm
+ps_cloud.add_vector_quantity("grid_vels", grid_vels, vectortype="ambient")
 
 # Grid forces
 grid_f = []
 for i in range(grid_length):
     for j in range(grid_length):
         for k in range(grid_length):
-            grid_f.append(np.array(sim["grid_forces"][0][i][j][k]) * 1e5)
-ps_cloud.add_vector_quantity("grid_forces", np.array(grid_f), vectortype="ambient", length=1)
+            if sim["grid_forces"][0][i][j][k][0] is None:
+                print(f"Null forces at {i} {j} {k}")
+                grid_f.append(np.array([0,10,0]))
+            else:
+                grid_f.append(np.array(sim["grid_forces"][0][i][j][k]))
+max_norm = get_max_norm(grid_f)
+print(f"Max grid force norm: {max_norm}")
+ps_cloud.add_vector_quantity("grid_forces", np.array(grid_f) / max_norm, vectortype="ambient")
 
-# ps_cloud.add_scalar_quantity("dist")
 ps.show()
