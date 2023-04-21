@@ -10,6 +10,7 @@ mod tests;
 mod types;
 mod material_properties;
 
+use std::borrow::{Borrow, BorrowMut};
 use std::collections::{HashSet, HashMap};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -72,7 +73,7 @@ fn main() {
     );
     // let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, SAND_DENSITY);
     let mut particles: Vec<Particle> = final_sim_config::slope_particle_init();
-    let mut grid: HashMap<(usize, usize, usize), Mutex<Gridcell>> = HashMap::new();
+    let mut grid: HashMap<(usize, usize, usize), Gridcell> = HashMap::new();
 
     println!("Current directory: {:?}", std::env::current_dir());
 
@@ -86,7 +87,7 @@ fn main() {
 
     println!("Initialization stuff done!");
     for iteration_num in tqdm(0..N_ITERATIONS) {
-        println!("START OF INTERATION {}", iteration_num);
+        // println!("START OF INTERATION {}", iteration_num);
         // println!("Rigid body position: {:?}", rigid_body.position);
         // println!("Rigid body velocity: {:?}", rigid_body.velocity);
         // println!("Rigid body orientation: {:?}", rigid_body.orientation);
@@ -113,7 +114,7 @@ fn main() {
                 }
             }
         }
-        println!("Time to save: {:?}", start.elapsed());
+        // println!("Time to save: {:?}", start.elapsed());
         
         // Reset grid
         // for i in 0..GRID_LENGTH {
@@ -125,9 +126,9 @@ fn main() {
         // }   
         let start = std::time::Instant::now();
         for gridcell in grid.values_mut() {
-            gridcell.lock().unwrap().reset_values();
+            gridcell.reset_values();
         }
-        println!("Time to reset grid: {:?}", start.elapsed());
+        // println!("Time to reset grid: {:?}", start.elapsed());
         
         // Update rigid body velocity and momentum at the very end!
         let tot_change_in_angular_momentum: Arc<Mutex<nalgebra::Matrix<f64, nalgebra::Const<3>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 3, 1>>>> = Arc::new(Mutex::new(Vector3::new(0.0, 0.0, 0.0)));
@@ -178,14 +179,14 @@ fn main() {
                 }
             }
         });
-        println!("Time to calculate hashmap: {:?}", start.elapsed());
+        // println!("Time to calculate hashmap: {:?}", start.elapsed());
 
         // Iterate through the hashmap to make sure every thing exists on the grid
         let start = std::time::Instant::now();
         for key in grid_to_particles.read().unwrap().keys() {
             grid.entry(*key).or_insert(Gridcell::new().into());
         }
-        println!("Time to make sure everything exists on the grid: {:?}", start.elapsed());
+        // println!("Time to make sure everything exists on the grid: {:?}", start.elapsed());
 
         let start = std::time::Instant::now();
         // Calculate Colored Distance Field for rigid body
@@ -230,7 +231,7 @@ fn main() {
                 if grid.get(&hashmap_ind).is_none() {
                     grid.insert((neighbor_i, neighbor_j, neighbor_k), Gridcell::new().into());
                 }
-                let mut gridcell = grid.get(&hashmap_ind).unwrap().lock().unwrap();
+                let mut gridcell = grid.get_mut(&hashmap_ind).unwrap();
                 if gridcell.unsigned_distance < dist {
                     continue;
                 }
@@ -246,7 +247,7 @@ fn main() {
                 }
             }
         }
-        println!("Time to calculate CDF: {:?}", start.elapsed());
+        // println!("Time to calculate CDF: {:?}", start.elapsed());
         
         let start = std::time::Instant::now();
         // Calculate particle tags T_{pr}
@@ -278,7 +279,7 @@ fn main() {
                             if gridcell.is_none() {
                                 continue;
                             }
-                            let gridcell = gridcell.unwrap().lock().unwrap();
+                            let gridcell = gridcell.unwrap();
                             // There should be no contribution if the grid cell is too far
                             if !gridcell.affinity {
                                 continue;
@@ -296,7 +297,7 @@ fn main() {
                 p.tag = if sum > 0.0 { 1 } else { -1 };
             }
         );
-        println!("Time to calculate particle tags: {:?}", start.elapsed());
+        // println!("Time to calculate particle tags: {:?}", start.elapsed());
 
         let start = std::time::Instant::now();
         // Calculate particle normals and particle distances from section 5.3.2
@@ -322,7 +323,7 @@ fn main() {
                         let y = y as usize;
                         let z = z as usize;
                         let hashmap_ind = (x, y, z);
-                        let gridcell = grid.get(&hashmap_ind).unwrap().lock().unwrap();
+                        let gridcell = grid.get(&hashmap_ind).unwrap();
                         let grad_w = grad_weighting_function(p.position, (x, y, z));
                         // TODO Is this right...? Is there some chain rule thing i'm missing?
                         sum += grad_w * gridcell.unsigned_distance * gridcell.distance_sign as f64;
@@ -338,7 +339,7 @@ fn main() {
             }
         }
         );
-        println!("Time to calculate particle normals: {:?}", start.elapsed());
+        // println!("Time to calculate particle normals: {:?}", start.elapsed());
 
         // CPIC p2g
 
@@ -382,12 +383,15 @@ fn main() {
         grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
             for p in particle_set.lock().unwrap().iter() {
                 let particle = particles[*p];
-                let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
-                grid_cell.mass += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2));                
+                let grid_cell = grid.get(key).unwrap();
+                unsafe {
+                    let m = grid_cell.mass.as_ptr().as_mut().unwrap();
+                    *m += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2));                
+                }
             }
         }
         );
-        println!("Time to splat mass: {:?}", start.elapsed());
+        // println!("Time to splat mass: {:?}", start.elapsed());
         
         let start = std::time::Instant::now();
         //velocity
@@ -444,9 +448,9 @@ fn main() {
         grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
             for p in particle_set.lock().unwrap().iter() {
                 let particle = particles[*p];
-                let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
+                let grid_cell = grid.get(key).unwrap();
                 let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
-                let gridcell_mass = grid_cell.mass;
+                let gridcell_mass = grid_cell.mass.get();
                 if grid_cell.affinity {
                     if grid_cell.distance_sign != particle.tag {
                         // TODO Possibly sus
@@ -461,12 +465,15 @@ fn main() {
                 if gridcell_mass == 0.0 {
                     continue;
                 }
-                grid_cell.velocity += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2))
-                * (particle.velocity + D_INV * particle.apic_b * (gridcell_pos - particle.position)) / gridcell_mass;                
+                unsafe {
+                    let v = grid_cell.velocity.as_ptr().as_mut().unwrap();
+                    *v += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2))
+                    * (particle.velocity + D_INV * particle.apic_b * (gridcell_pos - particle.position)) / gridcell_mass;                
+                }
             }
         }
         );
-        println!("Time to splat velocity: {:?}", start.elapsed());
+        // println!("Time to splat velocity: {:?}", start.elapsed());
 
         // Calculate the initial particle density
         if iteration_num == 0 {
@@ -495,7 +502,7 @@ fn main() {
                             if grid.get(&hashmap_ind).is_none() {
                                 grid.insert(hashmap_ind, Gridcell::new().into());
                             }
-                            tot_density += grid.get(&hashmap_ind).unwrap().lock().unwrap().mass
+                            tot_density += grid.get(&hashmap_ind).unwrap().mass.get()
                                 * weighting_function(p.position, (x, y, z)) / GRID_SPACING.powi(3);
                         }
                     }
@@ -574,22 +581,26 @@ fn main() {
         grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
             for p in particle_set.lock().unwrap().iter() {
                 let particle = particles[*p];
-                let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
+                let grid_cell = grid.get(key).unwrap();
                 let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
                 let particle_volume = particle.mass / particle.density;
                         
                 let m_inv = D_INV;
                 let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
-                grid_cell.force += -weighting_function(particle.position, (key.0, key.1, key.2))
-                    * particle_volume
-                    * m_inv
-                    * partial_psi_partial_f
-                    * (particle.f_e * particle.f_p).transpose()
-                    * (gridcell_pos - particle.position);
+
+                unsafe {
+                let f = grid_cell.force.as_ptr().as_mut().unwrap();
+                    *f += -weighting_function(particle.position, (key.0, key.1, key.2))
+                        * particle_volume
+                        * m_inv
+                        * partial_psi_partial_f
+                        * (particle.f_e * particle.f_p).transpose()
+                        * (gridcell_pos - particle.position);
+                }
             }
         }
         );
-        println!("Time to update grid forces: {:?}", start.elapsed());
+        // println!("Time to update grid forces: {:?}", start.elapsed());
         // println!("Grid force of grid[20][17][9]: {}", grid[20][17][9].force);
         // if should_break {
         //     panic!();
@@ -640,20 +651,23 @@ fn main() {
         //     }
         // }
         grid_to_particles.read().unwrap().par_iter().for_each(|((x, y, z), _)| {
-            let mut gridcell = grid.get(&(*x, *y, *z)).unwrap().lock().unwrap();
-            if gridcell.mass == 0.0 {
+            let gridcell = grid.get(&(*x, *y, *z)).unwrap();
+            if gridcell.mass.get() == 0.0 {
                 
             }
             else {
-                let grid_force = gridcell.force;
-                let grid_mass = gridcell.mass;
-                gridcell.velocity += DELTA_T * grid_force / grid_mass;
-                // Gravity
-                gridcell.velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+                let grid_force = gridcell.force.get();
+                let grid_mass = gridcell.mass.get();
+                unsafe {
+                    let v = gridcell.velocity.as_ptr().as_mut().unwrap();
+                    *v += DELTA_T * grid_force / grid_mass;
+                    // Gravity
+                    *v += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+                }
             }
         }
         );
-        println!("Time to update grid velocities: {:?}", start.elapsed());
+        // println!("Time to update grid velocities: {:?}", start.elapsed());
 
         // g2p
         
@@ -688,7 +702,7 @@ fn main() {
                         //     grid.insert(hashmap_ind, Gridcell::new());
                         // }
 
-                        let gridcell = grid.get(&hashmap_ind).unwrap().lock().unwrap();
+                        let gridcell = grid.get(&hashmap_ind).unwrap();
 
                         
                         // Check compatibility
@@ -724,9 +738,9 @@ fn main() {
                         } else {
                             // Compatible
                             velocity +=
-                                weighting_function(p.position, (x, y, z)) * gridcell.velocity;
+                                weighting_function(p.position, (x, y, z)) * gridcell.velocity.get();
                             b_new += weighting_function(p.position, (x, y, z))
-                                * gridcell.velocity
+                                * gridcell.velocity.get()
                                 * (grid_cell_ind_to_world_coords(x, y, z) - p.position).transpose();
                         }
                     }
@@ -755,7 +769,7 @@ fn main() {
                 p.apic_b = Matrix3::zeros();
             }
         });
-        println!("Time to g2p: {:?}", start.elapsed());
+        // println!("Time to g2p: {:?}", start.elapsed());
         
         let start: std::time::Instant = std::time::Instant::now();
         // Update particle deformation gradient
@@ -814,7 +828,7 @@ fn main() {
             p.position += DELTA_T * p.velocity;
             }
         );
-        println!("Time to update deformation gradients: {:?}", start.elapsed());
+        // println!("Time to update deformation gradients: {:?}", start.elapsed());
 
         let start = std::time::Instant::now();
         // Penalty impulse
@@ -835,7 +849,7 @@ fn main() {
                     * radius.cross(&rb_impulse);
             }
         }
-        println!("Time to penalty impulse: {:?}", start.elapsed());
+        // println!("Time to penalty impulse: {:?}", start.elapsed());
         
         // Adding gravity here... is there better way to do this?
         *tot_change_in_linear_velocity.lock().unwrap() += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);

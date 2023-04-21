@@ -20,11 +20,11 @@ pub struct Particle {
     pub alpha: f64,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct Gridcell {
-    pub velocity: Vector3<f64>,
-    pub mass: f64,
-    pub force: Vector3<f64>,
+    pub velocity: std::cell::Cell<Vector3<f64>>,
+    pub mass: std::cell::Cell<f64>,
+    pub force: std::cell::Cell<Vector3<f64>>,
     pub unsigned_distance: f64, // Smallest unsigned distance to a rigid particle
     pub rigid_particle_index: i32, // the index of the rigid particle that this gridcell is closest to
     pub affinity: bool, // Whether the grid cell is close enough to a rigid body. A_{ir} in the MLS MPM paper
@@ -34,9 +34,9 @@ pub struct Gridcell {
 impl Gridcell {
     pub fn new() -> Gridcell {
         Gridcell {
-            velocity: Vector3::zeros(),
-            mass: 0.0,
-            force: Vector3::zeros(),
+            velocity: Vector3::zeros().into(),
+            mass: 0.0.into(),
+            force: Vector3::zeros().into(),
             unsigned_distance: 1000000.0,
             rigid_particle_index: -1,
             affinity: false,
@@ -45,14 +45,17 @@ impl Gridcell {
     }
 
     pub fn reset_values(&mut self) {
-        self.velocity.scale_mut(0.0);
-        self.mass = 0.0;
-        self.force.scale_mut(0.0);
+        self.velocity.get().scale_mut(0.0);
+        self.mass = 0.0.into();
+        self.force.get_mut().scale_mut(0.0);
         self.unsigned_distance = 1000000.0; // Because, we're doing a min operation, this should be large at first
         self.affinity = false;
         self.distance_sign = 0;
     }
+    
 }
+unsafe impl Send for Gridcell {}
+unsafe impl Sync for Gridcell {}
 
 pub struct RigidBody {
     // Position and velocity are in world coords

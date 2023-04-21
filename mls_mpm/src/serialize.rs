@@ -178,7 +178,7 @@ impl Simulation {
             for j in 0..grid[i].len() {
                 let mut inner_2: Vec<[f64; 3]> = Vec::new();
                 for k in 0..grid[i][j].len() {
-                    inner_2.push(vector3_to_array(grid[i][j][k].velocity));
+                    inner_2.push(vector3_to_array(grid[i][j][k].velocity.get()));
                 }
                 inner.push(inner_2);
             }
@@ -244,7 +244,7 @@ impl Simulation {
             for j in 0..grid[i].len() {
                 let mut inner_2: Vec<[f64; 3]> = Vec::new();
                 for k in 0..grid[i][j].len() {
-                    inner_2.push(vector3_to_array(grid[i][j][k].force));
+                    inner_2.push(vector3_to_array(grid[i][j][k].force.get()));
                 }
                 inner.push(inner_2);
             }
