@@ -72,7 +72,7 @@ fn main() {
     );
     // let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, SAND_DENSITY);
     let mut particles: Vec<Particle> = final_sim_config::slope_particle_init();
-    let mut grid: HashMap<(usize, usize, usize), Gridcell> = HashMap::new();
+    let mut grid: HashMap<(usize, usize, usize), Mutex<Gridcell>> = HashMap::new();
 
     println!("Current directory: {:?}", std::env::current_dir());
 
@@ -125,7 +125,7 @@ fn main() {
         // }   
         let start = std::time::Instant::now();
         for gridcell in grid.values_mut() {
-            gridcell.reset_values();
+            gridcell.lock().unwrap().reset_values();
         }
         println!("Time to reset grid: {:?}", start.elapsed());
         
@@ -138,6 +138,32 @@ fn main() {
         let grid_to_particles: std::sync::RwLock<HashMap<(usize, usize, usize), Mutex<HashSet<usize>>>> = std::sync::RwLock::new(HashMap::new());
         particles.par_iter().enumerate().for_each(|(ind, p)| {
             let gridcell = get_base_grid_ind(&particles[ind].position, GRID_SPACING);
+            for dx in -2..3 {
+                for dy in -2..3 {
+                    for dz in -2..3 {
+                        let gridcell = (gridcell.0 as isize + dx, gridcell.1 as isize + dy, gridcell.2 as isize + dz);
+                        if gridcell.0 < 0 || gridcell.0 >= GRID_LENGTH_X as isize ||
+                        gridcell.1 < 0 || gridcell.1 >= GRID_LENGTH_Y as isize ||
+                        gridcell.2 < 0 || gridcell.2 >= GRID_LENGTH_Z as isize {
+                            continue;
+                        }
+                        let gridcell = (gridcell.0 as usize, gridcell.1 as usize, gridcell.2 as usize);
+                        let gridcell_read = grid_to_particles.read().unwrap();
+                        let gridcell_set = gridcell_read.get(&gridcell);
+                        match gridcell_set {
+                            Some(x) => {
+                                x.lock().unwrap().insert(ind);
+                            }
+                            None => {
+                                drop(gridcell_read);
+                                let mut new_set = HashSet::new();
+                                new_set.insert(ind);
+                                grid_to_particles.write().unwrap().insert(gridcell, Mutex::new(new_set));
+                            }
+                        }
+                    }
+                }
+            }
             let gridcell_read = grid_to_particles.read().unwrap();
             let gridcell_set = gridcell_read.get(&gridcell);
             match gridcell_set {
@@ -157,7 +183,7 @@ fn main() {
         // Iterate through the hashmap to make sure every thing exists on the grid
         let start = std::time::Instant::now();
         for key in grid_to_particles.read().unwrap().keys() {
-            grid.entry(*key).or_insert(Gridcell::new());
+            grid.entry(*key).or_insert(Gridcell::new().into());
         }
         println!("Time to make sure everything exists on the grid: {:?}", start.elapsed());
 
@@ -202,20 +228,21 @@ fn main() {
                 }
                 let hashmap_ind = (neighbor_i, neighbor_j, neighbor_k);
                 if grid.get(&hashmap_ind).is_none() {
-                    grid.insert((neighbor_i, neighbor_j, neighbor_k), Gridcell::new());
+                    grid.insert((neighbor_i, neighbor_j, neighbor_k), Gridcell::new().into());
                 }
-                if grid.get(&hashmap_ind).unwrap().unsigned_distance < dist {
+                let mut gridcell = grid.get(&hashmap_ind).unwrap().lock().unwrap();
+                if gridcell.unsigned_distance < dist {
                     continue;
                 }
-                grid.get_mut(&hashmap_ind).unwrap().affinity = true;
+                gridcell.affinity = true;
                 // If it is the shortest distance, set the distance the be the current one
-                grid.get_mut(&hashmap_ind).unwrap().unsigned_distance = dist;
+                gridcell.unsigned_distance = dist;
                 // Calculate the sign of the distance (inside or outside)
                 // Negative means inside the rigid body
                 if (grid_cell_loc - proj).dot(&rp_normal) < 0.0 {
-                    grid.get_mut(&hashmap_ind).unwrap().distance_sign = -1;
+                    gridcell.distance_sign = -1;
                 } else {
-                    grid.get_mut(&hashmap_ind).unwrap().distance_sign = 1;
+                    gridcell.distance_sign = 1;
                 }
             }
         }
@@ -247,10 +274,11 @@ fn main() {
                             let z = z as usize;
                             let hashmap_ind = (x, y, z);
                             let gridcell = grid.get(&hashmap_ind);
+                            // If the gridcell doesn't exist, then it doesn't have an affinity
                             if gridcell.is_none() {
                                 continue;
                             }
-                            let gridcell = gridcell.unwrap();
+                            let gridcell = gridcell.unwrap().lock().unwrap();
                             // There should be no contribution if the grid cell is too far
                             if !gridcell.affinity {
                                 continue;
@@ -272,7 +300,7 @@ fn main() {
 
         let start = std::time::Instant::now();
         // Calculate particle normals and particle distances from section 5.3.2
-        for p in particles.iter_mut() {
+        particles.par_iter_mut().for_each(|p| {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
             let mut sum: Vector3<f64> = Vector3::new(0.0, 0.0, 0.0);
             for dx in -2..3 {
@@ -294,10 +322,7 @@ fn main() {
                         let y = y as usize;
                         let z = z as usize;
                         let hashmap_ind = (x, y, z);
-                        if grid.get(&hashmap_ind).is_none() {
-                            grid.insert(hashmap_ind, Gridcell::new());
-                        }
-                        let gridcell = grid.get(&hashmap_ind).unwrap();
+                        let gridcell = grid.get(&hashmap_ind).unwrap().lock().unwrap();
                         let grad_w = grad_weighting_function(p.position, (x, y, z));
                         // TODO Is this right...? Is there some chain rule thing i'm missing?
                         sum += grad_w * gridcell.unsigned_distance * gridcell.distance_sign as f64;
@@ -312,101 +337,121 @@ fn main() {
                 p.particle_normal = sum.normalize();
             }
         }
+        );
         println!("Time to calculate particle normals: {:?}", start.elapsed());
 
         // CPIC p2g
 
         let start = std::time::Instant::now();
         //mass
-        for p in particles.iter() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x: i64 = base_coord.0 as i64 + dx;
-                        let y: i64 = base_coord.1 as i64 + dy;
-                        let z: i64 = base_coord.2 as i64 + dz;
-                        if x < 0
-                            || x >= GRID_LENGTH_X as i64
-                            || y < 0
-                            || y >= GRID_LENGTH_Y as i64
-                            || z < 0
-                            || z >= GRID_LENGTH_Z as i64
-                        {
-                            continue;
-                        }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        let hashmap_ind = (x, y, z);
-                        if grid.get(&hashmap_ind).is_none() {
-                            grid.insert(hashmap_ind, Gridcell::new());
-                        }
-                        // Check compatibility. If they're not nearby, then don't need to check compatibility?
-                        if grid.get(&hashmap_ind).unwrap().affinity {
-                            if grid.get(&hashmap_ind).unwrap().distance_sign != p.tag {
-                                continue;
-                            }    
-                        }
-                        grid.get_mut(&hashmap_ind).unwrap().mass += p.mass * weighting_function(p.position, (x, y, z));
-                    }
-                }
+        // for p in particles.iter() {
+        //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+        //     for dx in -2..3 {
+        //         for dy in -2..3 {
+        //             for dz in -2..3 {
+        //                 let x: i64 = base_coord.0 as i64 + dx;
+        //                 let y: i64 = base_coord.1 as i64 + dy;
+        //                 let z: i64 = base_coord.2 as i64 + dz;
+        //                 if x < 0
+        //                     || x >= GRID_LENGTH_X as i64
+        //                     || y < 0
+        //                     || y >= GRID_LENGTH_Y as i64
+        //                     || z < 0
+        //                     || z >= GRID_LENGTH_Z as i64
+        //                 {
+        //                     continue;
+        //                 }
+        //                 let x = x as usize;
+        //                 let y = y as usize;
+        //                 let z = z as usize;
+        //                 let hashmap_ind = (x, y, z);
+        //                 if grid.get(&hashmap_ind).is_none() {
+        //                     grid.insert(hashmap_ind, Gridcell::new());
+        //                 }
+        //                 // Check compatibility. If they're not nearby, then don't need to check compatibility?
+        //                 if grid.get(&hashmap_ind).unwrap().affinity {
+        //                     if grid.get(&hashmap_ind).unwrap().distance_sign != p.tag {
+        //                         continue;
+        //                     }    
+        //                 }
+        //                 grid.get_mut(&hashmap_ind).unwrap().mass += p.mass * weighting_function(p.position, (x, y, z));
+        //             }
+        //         }
+        //     }
+        // }
+        grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
+            for p in particle_set.lock().unwrap().iter() {
+                let particle = particles[*p];
+                let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
+                grid_cell.mass += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2));                
             }
         }
+        );
         println!("Time to splat mass: {:?}", start.elapsed());
         
         let start = std::time::Instant::now();
         //velocity
-        for p in particles.iter() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x: i64 = base_coord.0 as i64 + dx;
-                        let y: i64 = base_coord.1 as i64 + dy;
-                        let z: i64 = base_coord.2 as i64 + dz;
-                        if x < 0
-                            || x >= GRID_LENGTH_X as i64
-                            || y < 0
-                            || y >= GRID_LENGTH_Y as i64
-                            || z < 0
-                            || z >= GRID_LENGTH_Z as i64
-                        {
-                            continue;
-                        }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        let hashmap_ind = (x, y, z);
-                        if grid.get(&hashmap_ind).is_none() {
-                            grid.insert(hashmap_ind, Gridcell::new());
-                        }
-                        let gridcell = &mut grid.get(&hashmap_ind).unwrap();
-                        let grid_mass = gridcell.mass;
-                        // Check compatibility
-                        if gridcell.affinity {
-                            if gridcell.distance_sign != p.tag {
-                                // TODO Possibly sus
-                                // let gridcell_pos = Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                                // gridcell.velocity += p.mass
-                                //     * weighting_function(p.position, (x, y, z))
-                                //     * (proj_r(&rigid_body, p.velocity, p.particle_normal, gridcell_pos)
-                                //     + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
-                                continue;
-                            }
-                        }
-                        if grid_mass == 0.0 {
-                            continue;
-                        }
-                        let gridcell_pos =
-                            Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        grid.get_mut(&hashmap_ind).unwrap().velocity += p.mass
-                            * weighting_function(p.position, (x, y, z))
-                            * (p.velocity + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
-                    }
-                }
+        // for p in particles.iter() {
+        //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+        //     for dx in -2..3 {
+        //         for dy in -2..3 {
+        //             for dz in -2..3 {
+        //                 let x: i64 = base_coord.0 as i64 + dx;
+        //                 let y: i64 = base_coord.1 as i64 + dy;
+        //                 let z: i64 = base_coord.2 as i64 + dz;
+        //                 if x < 0
+        //                     || x >= GRID_LENGTH_X as i64
+        //                     || y < 0
+        //                     || y >= GRID_LENGTH_Y as i64
+        //                     || z < 0
+        //                     || z >= GRID_LENGTH_Z as i64
+        //                 {
+        //                     continue;
+        //                 }
+        //                 let x = x as usize;
+        //                 let y = y as usize;
+        //                 let z = z as usize;
+        //                 let hashmap_ind = (x, y, z);
+        //                 if grid.get(&hashmap_ind).is_none() {
+        //                     grid.insert(hashmap_ind, Gridcell::new().into());
+        //                 }
+        //                 let mut gridcell = grid.get(&hashmap_ind).unwrap().lock().unwrap();
+        //                 let grid_mass = gridcell.mass;
+        //                 // Check compatibility
+        //                 if gridcell.affinity {
+        //                     if gridcell.distance_sign != p.tag {
+        //                         // TODO Possibly sus
+        //                         // let gridcell_pos = Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
+        //                         // gridcell.velocity += p.mass
+        //                         //     * weighting_function(p.position, (x, y, z))
+        //                         //     * (proj_r(&rigid_body, p.velocity, p.particle_normal, gridcell_pos)
+        //                         //     + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
+        //                         continue;
+        //                     }
+        //                 }
+        //                 if grid_mass == 0.0 {
+        //                     continue;
+        //                 }
+        //                 let gridcell_pos =
+        //                     Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
+        //                 gridcell.velocity += p.mass
+        //                     * weighting_function(p.position, (x, y, z))
+        //                     * (p.velocity + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
+        //             }
+        //         }
+        //     }
+        // }
+        grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
+            for p in particle_set.lock().unwrap().iter() {
+                let particle = particles[*p];
+                let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
+                let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
+                let gridcell_mass = grid_cell.mass;
+                grid_cell.velocity += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2))
+                * (particle.velocity + D_INV * particle.apic_b * (gridcell_pos - particle.position)) / gridcell_mass;                
             }
         }
+        );
         println!("Time to splat velocity: {:?}", start.elapsed());
 
         // Calculate the initial particle density
@@ -434,9 +479,9 @@ fn main() {
                             let z = z as usize;
                             let hashmap_ind = (x, y, z);
                             if grid.get(&hashmap_ind).is_none() {
-                                grid.insert(hashmap_ind, Gridcell::new());
+                                grid.insert(hashmap_ind, Gridcell::new().into());
                             }
-                            tot_density += grid.get(&hashmap_ind).unwrap().mass
+                            tot_density += grid.get(&hashmap_ind).unwrap().lock().unwrap().mass
                                 * weighting_function(p.position, (x, y, z)) / GRID_SPACING.powi(3);
                         }
                     }
@@ -469,7 +514,7 @@ fn main() {
                         let z = z as usize;
                         let hashmap_ind = (x, y, z);
                         if grid.get(&hashmap_ind).is_none() {
-                            grid.insert(hashmap_ind, Gridcell::new());
+                            grid.insert(hashmap_ind, Gridcell::new().into());
                         }
                         
                         let particle_volume = p.mass / p.density;
@@ -478,7 +523,7 @@ fn main() {
                         let partial_psi_partial_f = neo_hookean_partial_psi_partial_f(p.f_e * p.f_p);
                         let grid_cell_position =
                             Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        grid.get_mut(&hashmap_ind).unwrap().force += -weighting_function(p.position, (x, y, z))
+                        grid.get_mut(&hashmap_ind).unwrap().lock().unwrap().force += -weighting_function(p.position, (x, y, z))
                             * particle_volume
                             * m_inv
                             * partial_psi_partial_f
@@ -565,17 +610,17 @@ fn main() {
         for (x, y, z) in gridcells_to_visit {
             let hashmap_ind = (x, y, z);
             if grid.get(&hashmap_ind).is_none() {
-                grid.insert(hashmap_ind, Gridcell::new());
+                grid.insert(hashmap_ind, Gridcell::new().into());
             }
-
-            if grid.get(&hashmap_ind).unwrap().mass == 0.0 {
+            let mut gridcell = grid.get_mut(&hashmap_ind).unwrap().lock().unwrap();
+            if gridcell.mass == 0.0 {
                 continue;
             }
-            let grid_force = grid.get(&hashmap_ind).unwrap().force;
-            let grid_mass = grid.get(&hashmap_ind).unwrap().mass;
-            grid.get_mut(&hashmap_ind).unwrap().velocity += DELTA_T * grid_force / grid_mass;
+            let grid_force = gridcell.force;
+            let grid_mass = gridcell.mass;
+            gridcell.velocity += DELTA_T * grid_force / grid_mass;
             // Gravity
-            grid.get_mut(&hashmap_ind).unwrap().velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+            gridcell.velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
         }
         println!("Time to update grid velocities: {:?}", start.elapsed());
 
@@ -612,7 +657,7 @@ fn main() {
                         //     grid.insert(hashmap_ind, Gridcell::new());
                         // }
 
-                        let gridcell = grid.get(&hashmap_ind).unwrap();
+                        let gridcell = grid.get(&hashmap_ind).unwrap().lock().unwrap();
 
                         
                         // Check compatibility
