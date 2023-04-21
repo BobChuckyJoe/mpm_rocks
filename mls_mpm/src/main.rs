@@ -134,7 +134,25 @@ fn main() {
         let tot_change_in_linear_velocity = Arc::new(Mutex::new(Vector3::new(0.0, 0.0, 0.0)));
         
         // Calculate a Hashmap that maps each gridcell to the set of particles that are affected by it
-        
+        let start = std::time::Instant::now();
+        let grid_to_particles: std::sync::RwLock<HashMap<(usize, usize, usize), Mutex<HashSet<usize>>>> = std::sync::RwLock::new(HashMap::new());
+        particles.par_iter().enumerate().for_each(|(ind, p)| {
+            let gridcell = get_base_grid_ind(&particles[ind].position, GRID_SPACING);
+            let gridcell_read = grid_to_particles.read().unwrap();
+            let gridcell_set = gridcell_read.get(&gridcell);
+            match gridcell_set {
+                Some(x) => {
+                    x.lock().unwrap().insert(ind);
+                }
+                None => {
+                    drop(gridcell_read);
+                    let mut new_set = HashSet::new();
+                    new_set.insert(ind);
+                    grid_to_particles.write().unwrap().insert(gridcell, Mutex::new(new_set));
+                }
+            }
+        });
+        println!("Time to calculate hashmap: {:?}", start.elapsed());
 
         let start = std::time::Instant::now();
         // Calculate Colored Distance Field for rigid body
