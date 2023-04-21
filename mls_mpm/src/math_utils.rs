@@ -1,11 +1,9 @@
 /// Random helper functions for math things
 use nalgebra::{Matrix3, Vector3, UnitQuaternion};
 
-use crate::config::GRID_LENGTH;
-
 // Helper function to iterate through 3x3x3 grid around the starting index
 // This is mainly used by rigid particle splatting
-pub fn iterate_over_3x3(start: (usize, usize, usize)) -> Vec<(usize, usize, usize)> {
+pub fn iterate_over_3x3(start: (usize, usize, usize), grid_lengths: (usize, usize, usize)) -> Vec<(usize, usize, usize)> {
     let mut inds = Vec::new();
     let (i, j, k) = start;
     for di in -1..2 {
@@ -14,9 +12,9 @@ pub fn iterate_over_3x3(start: (usize, usize, usize)) -> Vec<(usize, usize, usiz
                 let new_i = i as i32 + di;
                 let new_j = j as i32 + dj;
                 let new_k = k as i32 + dk;
-                if (new_i >= 0 && new_i < GRID_LENGTH as i32)
-                    && (new_j >= 0 && new_j < GRID_LENGTH as i32)
-                    && (new_k >= 0 && new_k < GRID_LENGTH as i32)
+                if (new_i >= 0 && new_i < grid_lengths.0 as i32)
+                    && (new_j >= 0 && new_j < grid_lengths.1 as i32)
+                    && (new_k >= 0 && new_k < grid_lengths.2 as i32)
                 {
                     inds.push((new_i as usize, new_j as usize, new_k as usize));
                 }

@@ -1,11 +1,13 @@
+use std::collections::HashMap;
+
 use serde_derive::{Deserialize, Serialize};
 
 use crate::{types::{RigidBody,Particle,Gridcell}, math_utils::{quaternion_to_array, vector3_to_array}};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Simulation {
-    box_size: f64,
-    grid_length: usize,
+    box_size: (f64, f64, f64),
+    grid_length: (usize, usize, usize),
     grid_spacing: f64,
     delta_t: f64,
     num_particles: usize,
@@ -34,8 +36,8 @@ pub struct Simulation {
 
 impl Simulation {
     pub fn new(
-        box_size: f64,
-        grid_length: usize,
+        box_size: (f64, f64, f64),
+        grid_length: (usize, usize, usize),
         grid_spacing: f64,
         delta_t: f64,
         num_particles: usize,
@@ -149,6 +151,26 @@ impl Simulation {
         self.unsigned_distance_field.push(to_ret);
     }
 
+    pub fn add_signed_distance_field_from_hashmap(&mut self, grid: HashMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
+        let mut to_ret: Vec<Vec<Vec<f64>>> = Vec::new();
+        for i in 0..grid_lengths.0 {
+            let mut inner: Vec<Vec<f64>> = Vec::new();
+            for j in 0..grid_lengths.1 {
+                let mut inner_2: Vec<f64> = Vec::new();
+                for k in 0..grid_lengths.2 {
+                    if grid.contains_key(&(i, j, k)) {
+                        inner_2.push(grid[&(i, j, k)].unsigned_distance);
+                    } else {
+                        inner_2.push(0.0);
+                    }
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.unsigned_distance_field.push(to_ret);
+    }
+
     pub fn add_grid_velocities(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {
         let mut to_ret: Vec<Vec<Vec<[f64; 3]>>> = Vec::new();
         for i in 0..grid.len() {
@@ -187,6 +209,26 @@ impl Simulation {
                 let mut inner_2: Vec<i32> = Vec::new();
                 for k in 0..grid[i][j].len() {
                     inner_2.push(grid[i][j][k].distance_sign);
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.grid_distance_signs.push(to_ret);
+    }
+
+    pub fn add_grid_distance_signs_from_hashmap(&mut self, grid: &mut HashMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
+        let mut to_ret: Vec<Vec<Vec<i32>>> = Vec::new();
+        for i in 0..grid_lengths.0 {
+            let mut inner: Vec<Vec<i32>> = Vec::new();
+            for j in 0..grid_lengths.1 {
+                let mut inner_2: Vec<i32> = Vec::new();
+                for k in 0..grid_lengths.2 {
+                    if grid.contains_key(&(i, j, k)) {
+                        inner_2.push(grid[&(i, j, k)].distance_sign);
+                    } else {
+                        inner_2.push(0);
+                    }
                 }
                 inner.push(inner_2);
             }

@@ -68,12 +68,15 @@ pub fn neo_hookean_partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> 
     //     println!("Determinant is too small");
     //     println!("Determinant: {}", deformation_gradient.determinant());
     // }
+    // SAND_MU_0: 14583333.333333334
+    // SAND_LAMBDA_0: 9722222.222222222
+    // println!("MU_0: {}, LAMBDA_0: {}", MU_0, LAMBDA_0);
     MU_0 * (deformation_gradient - deformation_gradient.transpose().try_inverse().unwrap()) + 
     LAMBDA_0 / 2.0 * deformation_gradient.determinant().powi(2).log(10.0) * deformation_gradient.transpose().try_inverse().unwrap()
 }
 
 // Drucker-Prager sand
-const SAND_YOUNGS_MODULUS: f64 = 3.5e7;
+const SAND_YOUNGS_MODULUS: f64 = 1.4e6; //3.5e7;
 const SAND_POISSONS_RATIO: f64 = 0.2;
 const SAND_MU_0: f64 = SAND_YOUNGS_MODULUS / (2.0 * (1.0 + SAND_POISSONS_RATIO));
 const SAND_LAMBDA_0: f64 = SAND_YOUNGS_MODULUS * SAND_POISSONS_RATIO / ((1.0 + SAND_POISSONS_RATIO) * (1.0 - 2.0 * SAND_POISSONS_RATIO)); // lame parameter
@@ -83,35 +86,25 @@ pub const H_2: f64 = 0.2;
 pub const H_3: f64 = 10.0;
 pub const SAND_DENSITY: f64 = 2200.0;
 
-pub fn sand_partial_psi_partial_f(deformation_gradien: Matrix3<f64>) -> Matrix3<f64>{
-    let svd = deformation_gradien.svd(true, true);
+pub fn sand_partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> Matrix3<f64>{
+    let svd = deformation_gradient.svd(true, true);
     let singular_val_inv = Matrix3::new(
-        1.0 / svd.singular_values[0],
-        0.0,
-        0.0,
-        0.0,
-        1.0 / svd.singular_values[1],
-        0.0,
-        0.0,
-        0.0,
-        1.0 / svd.singular_values[2],
+        1.0 / svd.singular_values[0],0.0,0.0,
+        0.0,1.0 / svd.singular_values[1],0.0,
+        0.0,0.0, 1.0 / svd.singular_values[2],
     );
     let ln_signular_val = Matrix3::new(
-        svd.singular_values[0].ln(),
-        0.0,
-        0.0,
-        0.0,
-        svd.singular_values[1].ln(),
-        0.0,
-        0.0,
-        0.0,
-        svd.singular_values[2].ln(),
+        svd.singular_values[0].ln(),0.0,0.0,
+        0.0,svd.singular_values[1].ln(),0.0,
+        0.0,0.0,svd.singular_values[2].ln(),
     );
 
     let u = svd.u.unwrap();
     let v_t = svd.v_t.unwrap();
-
-    u * (2.0 * SAND_MU_0 * singular_val_inv * ln_signular_val + SAND_LAMBDA_0 * ln_signular_val.trace() * singular_val_inv) * v_t.transpose()
+    // println!("SAND_MU_0: {}", SAND_MU_0);
+    // println!("SAND_LAMBDA_0: {}", SAND_LAMBDA_0);
+    u * (2.0 * SAND_MU_0 * singular_val_inv * ln_signular_val + SAND_LAMBDA_0 *
+         ln_signular_val.trace() * singular_val_inv) * v_t
     
 }
 pub fn project_to_yield_surface(f_e_svd: SVD<f64, Const<3>, Const<3>>, particle_alpha: f64) -> (Matrix3<f64>, usize, f64) {

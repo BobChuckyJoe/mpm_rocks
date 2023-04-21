@@ -28,7 +28,7 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
                 //     SIMULATION_SIZE / 2.0,
                 //     SIMULATION_SIZE / 2.0, // TODO change this back to center
                 // ),
-                + Vector3::new(5.0, 5.0, 3.0),
+                + Vector3::new(15.0, 2.5, 20.0),
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
             mass: 1.0,
@@ -51,14 +51,14 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
     for p in points.iter_mut() {
         p.alpha = alpha;
     }
-    for p in points.iter() {
-        assert!(p.position.x >= 0.0);
-        assert!(p.position.y >= 0.0);
-        assert!(p.position.z >= 0.0);
-        assert!(p.position.x <= SIMULATION_SIZE);
-        assert!(p.position.y <= SIMULATION_SIZE);
-        assert!(p.position.z <= SIMULATION_SIZE);
-    }
+    // for p in points.iter() {
+    //     assert!(p.position.x >= 0.0);
+    //     assert!(p.position.y >= 0.0);
+    //     assert!(p.position.z >= 0.0);
+    //     assert!(p.position.x <= SIMULATION_SIZE);
+    //     assert!(p.position.y <= SIMULATION_SIZE);
+    //     assert!(p.position.z <= SIMULATION_SIZE);
+    // }
     // Set the mass of each particle according to the density
     let tot_volume = 4.0 / 3.0 * PI * radius.powi(3);
     let tot_mass = tot_volume * density;

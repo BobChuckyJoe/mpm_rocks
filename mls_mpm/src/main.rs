@@ -1,6 +1,7 @@
 mod config;
 mod equations;
 mod icosahedron;
+mod final_sim_config;
 mod math_utils;
 mod obj_loader;
 mod particle_init;
@@ -10,23 +11,26 @@ mod types;
 mod material_properties;
 
 use std::collections::{HashSet, HashMap};
+use std::sync::Arc;
+use std::sync::Mutex;
 
-use nalgebra::{Matrix3, Vector3, clamp};
+use nalgebra::{Matrix3, Vector3};
+use rayon::prelude::*;
 // use tobj::{load_obj};
 // use obj::{load_obj, Obj};
 use tqdm::tqdm;
 
-use crate::config::{
-    BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_SIZE, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES, TIME_TO_SAVE
+use crate::final_sim_config::{
+    BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH_X, GRID_LENGTH_Y, GRID_LENGTH_Z, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
+    PENALTY_STIFFNESS, SIMULATION_DIMENSIONS, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES, TIME_TO_SAVE, GRID_LENGTHS
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
     convert_world_direction_to_local, get_base_grid_ind, grad_weighting_function, velocity_projection,
     grid_cell_ind_to_world_coords, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
-use crate::icosahedron::create_icosahedron;
-use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f, project_to_yield_surface, H_0, H_2, H_3, H_1};
+use crate::final_sim_config::is_in_bounds;
+use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f, project_to_yield_surface, H_0, H_2, H_3, H_1, sand_partial_psi_partial_f, SAND_DENSITY};
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
 use crate::serialize::Simulation;
@@ -41,8 +45,8 @@ const D_INV: f64 = 3.0 / GRID_SPACING / GRID_SPACING; // Constant since we're us
 
 fn main() {
     let mut sim = Simulation::new(
-        SIMULATION_SIZE,
-        GRID_LENGTH,
+        SIMULATION_DIMENSIONS,
+        GRID_LENGTHS,
         GRID_SPACING,
         DELTA_T,
         N_PARTICLES,
@@ -66,28 +70,33 @@ fn main() {
         Vec::new(),
         Vec::new(),
     );
-    let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, DIRT_DENSITY);
+    // let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, SAND_DENSITY);
+    let mut particles: Vec<Particle> = final_sim_config::slope_particle_init();
     let mut grid: HashMap<(usize, usize, usize), Gridcell> = HashMap::new();
 
     println!("Current directory: {:?}", std::env::current_dir());
 
     let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH, GRANITE_DENSITY);
     sim.add_rigid_body_mesh_data(&rigid_body);
-    rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
+    rigid_body.position = final_sim_config::RIGID_BODY_INITIAL_POSITION;
+    rigid_body.velocity = final_sim_config::RIGID_BODY_INITIAL_VELOCITY;
     rigid_body.angular_momentum = Vector3::new(0.0, 10000.0, 0.0);
     println!("Orientation: {:?}", rigid_body.orientation);
     println!("Rigid body mass: {}", rigid_body.mass);
 
     println!("Initialization stuff done!");
     for iteration_num in tqdm(0..N_ITERATIONS) {
-        // println!("START OF INTERATION {}", iteration_num);
+        println!("START OF INTERATION {}", iteration_num);
         // println!("Rigid body position: {:?}", rigid_body.position);
         // println!("Rigid body velocity: {:?}", rigid_body.velocity);
         // println!("Rigid body orientation: {:?}", rigid_body.orientation);
         // println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
         // println!("particle 0 velocity: {:?}", particles[0].velocity);
         
+        let start = std::time::Instant::now();
         let should_save = iteration_num % 20 == 0;
+        // let should_save = true;
+        // let should_save = false;
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
         match TIME_TO_SAVE {
             Some(x) => {
@@ -104,6 +113,7 @@ fn main() {
                 }
             }
         }
+        println!("Time to save: {:?}", start.elapsed());
         
         // Reset grid
         // for i in 0..GRID_LENGTH {
@@ -113,111 +123,20 @@ fn main() {
         //         }
         //     }
         // }   
+        let start = std::time::Instant::now();
         for gridcell in grid.values_mut() {
             gridcell.reset_values();
         }
+        println!("Time to reset grid: {:?}", start.elapsed());
         
         // Update rigid body velocity and momentum at the very end!
-        let mut tot_change_in_angular_momentum = Vector3::new(0.0, 0.0, 0.0);
-        let mut tot_change_in_linear_velocity = Vector3::new(0.0, 0.0, 0.0);
-        /*
-        The code here is APIC.
-        I am doing CPIC for the rigid body stuff, which comes after this
-        // APIC p2g mass transfer
-        for p in particles.iter() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x = base_coord.0 as i64 + dx;
-                        let y = base_coord.1 as i64 + dy;
-                        let z = base_coord.2 as i64 + dz;
-                        if x < 0 || x >= GRID_LENGTH as i64 || y < 0 || y >= GRID_LENGTH as i64 || z < 0 || z >= GRID_LENGTH as i64 {
-                            continue;
-                        }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        let weight = weighting_function(p.position, (x, y, z));
-                        grid[x][y][z].mass += weight * p.mass;
-                    }
-                }
-            }
-        }
-        // APIC p2g momentum transfer
-        for p in particles.iter() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+        let tot_change_in_angular_momentum: Arc<Mutex<nalgebra::Matrix<f64, nalgebra::Const<3>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 3, 1>>>> = Arc::new(Mutex::new(Vector3::new(0.0, 0.0, 0.0)));
+        let tot_change_in_linear_velocity = Arc::new(Mutex::new(Vector3::new(0.0, 0.0, 0.0)));
+        
+        // Calculate a Hashmap that maps each gridcell to the set of particles that are affected by it
+        
 
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x = base_coord.0 as i64 + dx;
-                        let y = base_coord.1 as i64 + dy;
-                        let z = base_coord.2 as i64 + dz;
-                        if x < 0 || x >= GRID_LENGTH as i64 || y < 0 || y >= GRID_LENGTH as i64 || z < 0 || z >= GRID_LENGTH as i64 {
-                            continue;
-                        }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        if grid[x][y][z].mass == 0.0 {
-                            continue;
-                        }
-
-                        let grid_world_coords = Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        let weight = weighting_function(p.position, (x, y, z));
-                        let mass = grid[x][y][z].mass;
-                        grid[x][y][z].velocity += weight * p.mass *
-                        (p.velocity + p.apic_b * D_INV * (grid_world_coords - p.position))
-                        / mass;
-                    }
-                }
-            }
-        }
-        // Grid force calculation using eq 18 from MLS-MPM paper
-        for p in particles.iter() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x: i64 = base_coord.0 as i64 + dx;
-                        let y: i64 = base_coord.1 as i64 + dy;
-                        let z: i64 = base_coord.2 as i64 + dz;
-                        if x < 0 || x >= GRID_LENGTH as i64 || y < 0 || y >= GRID_LENGTH as i64 || z < 0 || z >= GRID_LENGTH as i64 {
-                            continue;
-                        }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        let particle_volume = p.mass / p.density;
-                        let m_inv = D_INV;
-                        let partial_psi_partial_f = partial_psi_partial_f(p.deformation_gradient);
-                        let grid_cell_position = Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        grid[x][y][z].force += - weighting_function(p.position, (x, y, z)) * particle_volume * m_inv * partial_psi_partial_f * p.deformation_gradient.transpose() * (grid_cell_position - p.position);
-                    }
-                }
-            }
-        }
-        // Grid velocity update
-        // TODO I'm not exactly understanding how to implement the semi-implicit Euler integration.
-        // The update is done at a previous timestep
-        // It says that the grid position should not actually change, but the grid velocity should.
-        // See eq 182 of mpm course
-        // I'll just do explicit Euler for now
-        for i in 0..GRID_LENGTH {
-            for j in 0..GRID_LENGTH {
-                for k in 0..GRID_LENGTH {
-                    if grid[i][j][k].mass == 0.0 {
-                        continue;
-                    }
-                    let grid_force = grid[i][j][k].force;
-                    let grid_mass = grid[i][j][k].mass;
-                    grid[i][j][k].velocity += DELTA_T * grid_force / grid_mass;
-                    grid[i][j][k].velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T; // Gravity
-                }
-            }
-        }
-        */
+        let start = std::time::Instant::now();
         // Calculate Colored Distance Field for rigid body
         for ind in 0..rigid_body.rigid_particle_positions.len() {
             // Convert to world_coords
@@ -245,7 +164,7 @@ fn main() {
                 
             // calculate minumum distance
             let start = get_base_grid_ind(&p_pos, GRID_SPACING);
-            for (neighbor_i, neighbor_j, neighbor_k) in iterate_over_3x3(start) {
+            for (neighbor_i, neighbor_j, neighbor_k) in iterate_over_3x3(start, GRID_LENGTHS) {
                 let grid_cell_loc =
                     Vector3::new(neighbor_i as f64, neighbor_j as f64, neighbor_k as f64)
                         * GRID_SPACING;
@@ -263,7 +182,7 @@ fn main() {
                     grid_cell_loc.z - p_pos.z,
                 )
                 .norm();
-                if neighbor_i >= GRID_LENGTH || neighbor_j >= GRID_LENGTH || neighbor_k >= GRID_LENGTH {
+                if neighbor_i >= GRID_LENGTH_X || neighbor_j >= GRID_LENGTH_Y || neighbor_k >= GRID_LENGTH_Z {
                     continue;
                 }
                 let hashmap_ind = (neighbor_i, neighbor_j, neighbor_k);
@@ -285,7 +204,9 @@ fn main() {
                 }
             }
         }
+        println!("Time to calculate CDF: {:?}", start.elapsed());
         
+        let start = std::time::Instant::now();
         // Calculate particle tags T_{pr}
         // Equation 21 from MLS-MPM paper
         for p in particles.iter_mut() {
@@ -298,11 +219,11 @@ fn main() {
                         let y: i64 = base_coord.1 as i64 + dy;
                         let z: i64 = base_coord.2 as i64 + dz;
                         if x < 0
-                            || x >= GRID_LENGTH as i64
+                            || x >= GRID_LENGTH_X as i64
                             || y < 0
-                            || y >= GRID_LENGTH as i64
+                            || y >= GRID_LENGTH_Y as i64
                             || z < 0
-                            || z >= GRID_LENGTH as i64
+                            || z >= GRID_LENGTH_Z as i64
                         {
                             continue;
                         }
@@ -330,6 +251,9 @@ fn main() {
             p.particle_distance = sum;
             p.tag = if sum > 0.0 { 1 } else { -1 };
         }
+        println!("Time to calculate particle tags: {:?}", start.elapsed());
+
+        let start = std::time::Instant::now();
         // Calculate particle normals and particle distances from section 5.3.2
         for p in particles.iter_mut() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -341,11 +265,11 @@ fn main() {
                         let y: i64 = base_coord.1 as i64 + dy;
                         let z: i64 = base_coord.2 as i64 + dz;
                         if x < 0
-                            || x >= GRID_LENGTH as i64
+                            || x >= GRID_LENGTH_X as i64
                             || y < 0
-                            || y >= GRID_LENGTH as i64
+                            || y >= GRID_LENGTH_Y as i64
                             || z < 0
-                            || z >= GRID_LENGTH as i64
+                            || z >= GRID_LENGTH_Z as i64
                         {
                             continue;
                         }
@@ -371,8 +295,11 @@ fn main() {
                 p.particle_normal = sum.normalize();
             }
         }
+        println!("Time to calculate particle normals: {:?}", start.elapsed());
+
         // CPIC p2g
 
+        let start = std::time::Instant::now();
         //mass
         for p in particles.iter() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -383,11 +310,11 @@ fn main() {
                         let y: i64 = base_coord.1 as i64 + dy;
                         let z: i64 = base_coord.2 as i64 + dz;
                         if x < 0
-                            || x >= GRID_LENGTH as i64
+                            || x >= GRID_LENGTH_X as i64
                             || y < 0
-                            || y >= GRID_LENGTH as i64
+                            || y >= GRID_LENGTH_Y as i64
                             || z < 0
-                            || z >= GRID_LENGTH as i64
+                            || z >= GRID_LENGTH_Z as i64
                         {
                             continue;
                         }
@@ -409,7 +336,9 @@ fn main() {
                 }
             }
         }
+        println!("Time to splat mass: {:?}", start.elapsed());
         
+        let start = std::time::Instant::now();
         //velocity
         for p in particles.iter() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -420,11 +349,11 @@ fn main() {
                         let y: i64 = base_coord.1 as i64 + dy;
                         let z: i64 = base_coord.2 as i64 + dz;
                         if x < 0
-                            || x >= GRID_LENGTH as i64
+                            || x >= GRID_LENGTH_X as i64
                             || y < 0
-                            || y >= GRID_LENGTH as i64
+                            || y >= GRID_LENGTH_Y as i64
                             || z < 0
-                            || z >= GRID_LENGTH as i64
+                            || z >= GRID_LENGTH_Z as i64
                         {
                             continue;
                         }
@@ -461,6 +390,7 @@ fn main() {
                 }
             }
         }
+        println!("Time to splat velocity: {:?}", start.elapsed());
 
         // Calculate the initial particle density
         if iteration_num == 0 {
@@ -474,11 +404,11 @@ fn main() {
                             let y: i64 = base_coord.1 as i64 + dy;
                             let z: i64 = base_coord.2 as i64 + dz;
                             if x < 0
-                                || x >= GRID_LENGTH as i64
+                                || x >= GRID_LENGTH_X as i64
                                 || y < 0
-                                || y >= GRID_LENGTH as i64
+                                || y >= GRID_LENGTH_Y as i64
                                 || z < 0
-                                || z >= GRID_LENGTH as i64
+                                || z >= GRID_LENGTH_Z as i64
                             {
                                 continue;
                             }
@@ -497,8 +427,8 @@ fn main() {
                 p.density = tot_density;
             }
         }
-
-        let mut should_break = false;
+        
+        let start = std::time::Instant::now();
         // Grid force calculation using eq 18 from MLS-MPM paper
         for p in particles.iter() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -509,11 +439,11 @@ fn main() {
                         let y: i64 = base_coord.1 as i64 + dy;
                         let z: i64 = base_coord.2 as i64 + dz;
                         if x < 0
-                            || x >= GRID_LENGTH as i64
+                            || x >= GRID_LENGTH_X as i64
                             || y < 0
-                            || y >= GRID_LENGTH as i64
+                            || y >= GRID_LENGTH_Y as i64
                             || z < 0
-                            || z >= GRID_LENGTH as i64
+                            || z >= GRID_LENGTH_Z as i64
                         {
                             continue;
                         }
@@ -565,6 +495,7 @@ fn main() {
             //     panic!();
             // }
         }
+        println!("Time to update grid forces: {:?}", start.elapsed());
         // println!("Grid force of grid[20][17][9]: {}", grid[20][17][9].force);
         // if should_break {
         //     panic!();
@@ -587,6 +518,7 @@ fn main() {
         //         }
         //     }
         // }
+        let start = std::time::Instant::now();
         let mut gridcells_to_visit: HashSet<(usize, usize, usize)> = HashSet::new();
         for p in particles.iter() {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -597,11 +529,11 @@ fn main() {
                         let y: i64 = base_coord.1 as i64 + dy;
                         let z: i64 = base_coord.2 as i64 + dz;
                         if x < 0
-                            || x >= GRID_LENGTH as i64
+                            || x >= GRID_LENGTH_X as i64
                             || y < 0
-                            || y >= GRID_LENGTH as i64
+                            || y >= GRID_LENGTH_Y as i64
                             || z < 0
-                            || z >= GRID_LENGTH as i64
+                            || z >= GRID_LENGTH_Z as i64
                         {
                             continue;
                         }
@@ -628,9 +560,12 @@ fn main() {
             // Gravity
             grid.get_mut(&hashmap_ind).unwrap().velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
         }
+        println!("Time to update grid velocities: {:?}", start.elapsed());
 
         // g2p
-        for p in particles.iter_mut() {
+        
+        let start = std::time::Instant::now();
+        particles.par_iter_mut().for_each(|p| {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
             // Sum these grid cells in the support of the weighting function
             let mut velocity = Vector3::new(0.0, 0.0, 0.0);
@@ -642,11 +577,11 @@ fn main() {
                         let y = base_coord.1 as i64 + dy;
                         let z = base_coord.2 as i64 + dz;
                         if x < 0
-                            || x >= GRID_LENGTH as i64
+                            || x >= GRID_LENGTH_X as i64
                             || y < 0
-                            || y >= GRID_LENGTH as i64
+                            || y >= GRID_LENGTH_Y as i64
                             || z < 0
-                            || z >= GRID_LENGTH as i64
+                            || z >= GRID_LENGTH_Z as i64
                         {
                             continue;
                         }
@@ -655,9 +590,10 @@ fn main() {
                         let y = y as usize;
                         let z = z as usize;
                         let hashmap_ind = (x, y, z);
-                        if grid.get(&hashmap_ind).is_none() {
-                            grid.insert(hashmap_ind, Gridcell::new());
-                        }
+                        // All cells should be initialized in the g2p at least
+                        // if grid.get(&hashmap_ind).is_none() {
+                        //     grid.insert(hashmap_ind, Gridcell::new());
+                        // }
 
                         let gridcell = grid.get(&hashmap_ind).unwrap();
 
@@ -685,10 +621,10 @@ fn main() {
                             let impulse = p.mass * (p.velocity - pr) * weighting_function(p.position, (x,y, z));
                             
                             // Linear portion ezpz
-                            tot_change_in_linear_velocity += impulse / rigid_body.mass;
+                            *tot_change_in_linear_velocity.lock().unwrap() += impulse / rigid_body.mass;
                             
                             let radius = grid_cell_ind_to_world_coords(x, y, z) - rigid_body.position;
-                            tot_change_in_angular_momentum += get_inertia_tensor_world(&rigid_body).try_inverse().unwrap()
+                            *tot_change_in_angular_momentum.lock().unwrap() += get_inertia_tensor_world(&rigid_body).try_inverse().unwrap()
                                 * radius.cross(&impulse);
                             // println!("new_angular_momentum {:?}", rigid_body.angular_momentum);
                             // println!("new_omega {:?}", rigid_body.omega);
@@ -708,22 +644,29 @@ fn main() {
             p.apic_b = b_new;
             
             // Boundary conditions
-            if p.position.x < BOUNDARY
-                || p.position.y < BOUNDARY
-                || p.position.z < BOUNDARY
-                || p.position.x > SIMULATION_SIZE - BOUNDARY
-                || p.position.y > SIMULATION_SIZE - BOUNDARY
-                || p.position.z > SIMULATION_SIZE - BOUNDARY
-            {
+            // if p.position.x < BOUNDARY
+            //     || p.position.y < BOUNDARY
+            //     || p.position.z < BOUNDARY
+            //     || p.position.x > SIMULATION_SIZE - BOUNDARY
+            //     || p.position.y > SIMULATION_SIZE - BOUNDARY
+            //     || p.position.z > SIMULATION_SIZE - BOUNDARY
+            // {
+            //     p.velocity = Vector3::new(0.0, 0.0, 0.0);
+            //     p.apic_b = Matrix3::zeros();
+            //     p.position.x = p.position.x.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
+            //     p.position.y = p.position.y.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
+            //     p.position.z = p.position.z.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
+            // }
+            if !is_in_bounds(p.position) {
                 p.velocity = Vector3::new(0.0, 0.0, 0.0);
                 p.apic_b = Matrix3::zeros();
-                p.position.x = p.position.x.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
-                p.position.y = p.position.y.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
-                p.position.z = p.position.z.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
             }
-        }
+        });
+        println!("Time to g2p: {:?}", start.elapsed());
+        
+        let start = std::time::Instant::now();
         // Update particle deformation gradient
-        for p in particles.iter_mut() {
+        particles.par_iter_mut().for_each(|p| {
             let c_n_plus_1 = p.apic_b * D_INV;
             // First, assume all of the deformation is elastic
             let f_e_hat_new =
@@ -776,8 +719,11 @@ fn main() {
             // p.f_p = v_t.transpose() * f_e_singular.try_inverse().unwrap() * u.transpose() * p.f_p;
             // Particle advection
             p.position += DELTA_T * p.velocity;
-        }
+            }
+        );
+        println!("Time to update deformation gradients: {:?}", start.elapsed());
 
+        let start = std::time::Instant::now();
         // Penalty impulse
         for p in particles.iter_mut() {
             if p.particle_distance < 0.0 {
@@ -789,29 +735,29 @@ fn main() {
                 // Rigid body update
                 let rb_impulse = -penalty_impulse;
                 // Linear portion
-                tot_change_in_linear_velocity += rb_impulse / rigid_body.mass;
+                *tot_change_in_linear_velocity.lock().unwrap() += rb_impulse / rigid_body.mass;
                 // Angular portion
                 let radius = p.position - rigid_body.position;
-                tot_change_in_angular_momentum += rigid_body.inertia_tensor.try_inverse().unwrap()
+                *tot_change_in_angular_momentum.lock().unwrap() += rigid_body.inertia_tensor.try_inverse().unwrap()
                     * radius.cross(&rb_impulse);
             }
         }
+        println!("Time to penalty impulse: {:?}", start.elapsed());
         
         // Adding gravity here... is there better way to do this?
-        tot_change_in_linear_velocity += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
-        
+        *tot_change_in_linear_velocity.lock().unwrap() += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);
         
         // Rigid body velocity/angular momentum update
-        rigid_body.velocity += tot_change_in_linear_velocity;
-        rigid_body.angular_momentum += tot_change_in_angular_momentum;
+        rigid_body.velocity += *tot_change_in_linear_velocity.lock().unwrap();
+        rigid_body.angular_momentum += *tot_change_in_angular_momentum.lock().unwrap();
 
         // Boundary condition for rigid body
-        if rigid_body.position.x < BOUNDARY
-            || rigid_body.position.y < BOUNDARY
-            || rigid_body.position.z < BOUNDARY
-            || rigid_body.position.x > SIMULATION_SIZE - BOUNDARY
-            || rigid_body.position.y > SIMULATION_SIZE - BOUNDARY
-            || rigid_body.position.z > SIMULATION_SIZE - BOUNDARY
+        if rigid_body.position.x < final_sim_config::BOUNDARY
+            || rigid_body.position.y < final_sim_config::BOUNDARY
+            || rigid_body.position.z < final_sim_config::BOUNDARY
+            || rigid_body.position.x > final_sim_config::SIMULATION_DIMENSIONS.0 - final_sim_config::BOUNDARY
+            || rigid_body.position.y > final_sim_config::SIMULATION_DIMENSIONS.1 - final_sim_config::BOUNDARY
+            || rigid_body.position.z > final_sim_config::SIMULATION_DIMENSIONS.2 - final_sim_config::BOUNDARY
         {
             rigid_body.velocity = Vector3::new(0.0, 0.0, 0.0);
         }
@@ -848,7 +794,7 @@ fn main() {
         // match OUTPUT_GRID_DISTANCE_SIGNS {
         //     Some(iteration_to_save) => {
         //         if iteration_num == iteration_to_save {
-        //             sim.add_grid_distance_signs(&grid);
+        //             sim.add_grid_distance_signs_from_hashmap(&mut grid, GRID_LENGTHS);
         //         }
         //     },
         //     None => {},
