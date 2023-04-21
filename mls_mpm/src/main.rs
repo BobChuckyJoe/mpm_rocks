@@ -447,6 +447,20 @@ fn main() {
                 let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
                 let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
                 let gridcell_mass = grid_cell.mass;
+                if grid_cell.affinity {
+                    if grid_cell.distance_sign != particle.tag {
+                        // TODO Possibly sus
+                        // let gridcell_pos = Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
+                        // gridcell.velocity += p.mass
+                        //     * weighting_function(p.position, (x, y, z))
+                        //     * (proj_r(&rigid_body, p.velocity, p.particle_normal, gridcell_pos)
+                        //     + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
+                        continue;
+                    }
+                }
+                if gridcell_mass == 0.0 {
+                    continue;
+                }
                 grid_cell.velocity += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2))
                 * (particle.velocity + D_INV * particle.apic_b * (gridcell_pos - particle.position)) / gridcell_mass;                
             }
@@ -726,7 +740,7 @@ fn main() {
         });
         println!("Time to g2p: {:?}", start.elapsed());
         
-        let start = std::time::Instant::now();
+        let start: std::time::Instant = std::time::Instant::now();
         // Update particle deformation gradient
         particles.par_iter_mut().for_each(|p| {
             let c_n_plus_1 = p.apic_b * D_INV;
