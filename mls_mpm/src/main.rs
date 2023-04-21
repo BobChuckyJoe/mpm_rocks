@@ -9,7 +9,7 @@ mod tests;
 mod types;
 mod material_properties;
 
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 
 use nalgebra::{Matrix3, Vector3, clamp};
 // use tobj::{load_obj};
@@ -67,8 +67,7 @@ fn main() {
         Vec::new(),
     );
     let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, DIRT_DENSITY);
-    let mut grid: Vec<Vec<Vec<Gridcell>>> =
-        vec![vec![vec![Gridcell::new(); GRID_LENGTH]; GRID_LENGTH]; GRID_LENGTH];
+    let mut grid: HashMap<(usize, usize, usize), Gridcell> = HashMap::new();
 
     println!("Current directory: {:?}", std::env::current_dir());
 
@@ -107,15 +106,16 @@ fn main() {
         }
         
         // Reset grid
-        for i in 0..GRID_LENGTH {
-            for j in 0..GRID_LENGTH {
-                for k in 0..GRID_LENGTH {
-                    grid[i][j][k].reset_values();
-                }
-            }
-        }   
-        // rigid_body.position = Vector3::new(5.0, 5.0, 8.0);
-
+        // for i in 0..GRID_LENGTH {
+        //     for j in 0..GRID_LENGTH {
+        //         for k in 0..GRID_LENGTH {
+        //             grid[i][j][k].reset_values();
+        //         }
+        //     }
+        // }   
+        for gridcell in grid.values_mut() {
+            gridcell.reset_values();
+        }
         
         // Update rigid body velocity and momentum at the very end!
         let mut tot_change_in_angular_momentum = Vector3::new(0.0, 0.0, 0.0);
@@ -266,26 +266,22 @@ fn main() {
                 if neighbor_i >= GRID_LENGTH || neighbor_j >= GRID_LENGTH || neighbor_k >= GRID_LENGTH {
                     continue;
                 }
-                if grid[neighbor_i][neighbor_j][neighbor_k].unsigned_distance < dist {
+                let hashmap_ind = (neighbor_i, neighbor_j, neighbor_k);
+                if grid.get(&hashmap_ind).is_none() {
+                    grid.insert((neighbor_i, neighbor_j, neighbor_k), Gridcell::new());
+                }
+                if grid.get(&hashmap_ind).unwrap().unsigned_distance < dist {
                     continue;
                 }
-                grid[neighbor_i][neighbor_j][neighbor_k].affinity = true;
+                grid.get_mut(&hashmap_ind).unwrap().affinity = true;
                 // If it is the shortest distance, set the distance the be the current one
-                grid[neighbor_i][neighbor_j][neighbor_k].unsigned_distance = dist;
+                grid.get_mut(&hashmap_ind).unwrap().unsigned_distance = dist;
                 // Calculate the sign of the distance (inside or outside)
                 // Negative means inside the rigid body
                 if (grid_cell_loc - proj).dot(&rp_normal) < 0.0 {
-                    grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = -1;
-                    if (grid_cell_ind_to_world_coords(neighbor_i, neighbor_j, neighbor_k) - rigid_body.position).norm() > 2.0 {
-                        println!("WTF");
-                        println!("Current grid cell: {:?}", (neighbor_i, neighbor_j, neighbor_k));
-                        println!("grid cell world position: {}", grid_cell_ind_to_world_coords(neighbor_i, neighbor_j, neighbor_k));
-                        println!("rigid particle position: {}", p_pos);
-                    }
-                    // println!("grid cell {:?} is now at distance -{}", (neighbor_i, neighbor_j, neighbor_k), dist);
+                    grid.get_mut(&hashmap_ind).unwrap().distance_sign = -1;
                 } else {
-                    grid[neighbor_i][neighbor_j][neighbor_k].distance_sign = 1;
-                    // println!("grid cell {:?} is now at distance {}", (neighbor_i, neighbor_j, neighbor_k), dist);
+                    grid.get_mut(&hashmap_ind).unwrap().distance_sign = 1;
                 }
             }
         }
@@ -313,7 +309,11 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
-                        let gridcell = grid[x][y][z];
+                        let hashmap_ind = (x, y, z);
+                        if grid.get(&hashmap_ind).is_none() {
+                            grid.insert(hashmap_ind, Gridcell::new());
+                        }
+                        let gridcell = grid.get(&hashmap_ind).unwrap();
                         // There should be no contribution if the grid cell is too far
                         if !gridcell.affinity {
                             continue;
@@ -352,7 +352,11 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
-                        let gridcell = grid[x][y][z];
+                        let hashmap_ind = (x, y, z);
+                        if grid.get(&hashmap_ind).is_none() {
+                            grid.insert(hashmap_ind, Gridcell::new());
+                        }
+                        let gridcell = grid.get(&hashmap_ind).unwrap();
                         let grad_w = grad_weighting_function(p.position, (x, y, z));
                         // TODO Is this right...? Is there some chain rule thing i'm missing?
                         sum += grad_w * gridcell.unsigned_distance * gridcell.distance_sign as f64;
@@ -390,13 +394,17 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
+                        let hashmap_ind = (x, y, z);
+                        if grid.get(&hashmap_ind).is_none() {
+                            grid.insert(hashmap_ind, Gridcell::new());
+                        }
                         // Check compatibility. If they're not nearby, then don't need to check compatibility?
-                        if grid[x][y][z].affinity {
-                            if grid[x][y][z].distance_sign != p.tag {
+                        if grid.get(&hashmap_ind).unwrap().affinity {
+                            if grid.get(&hashmap_ind).unwrap().distance_sign != p.tag {
                                 continue;
                             }    
                         }
-                        grid[x][y][z].mass += p.mass * weighting_function(p.position, (x, y, z));
+                        grid.get_mut(&hashmap_ind).unwrap().mass += p.mass * weighting_function(p.position, (x, y, z));
                     }
                 }
             }
@@ -423,7 +431,11 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
-                        let gridcell = &mut grid[x][y][z];
+                        let hashmap_ind = (x, y, z);
+                        if grid.get(&hashmap_ind).is_none() {
+                            grid.insert(hashmap_ind, Gridcell::new());
+                        }
+                        let gridcell = &mut grid.get(&hashmap_ind).unwrap();
                         let grid_mass = gridcell.mass;
                         // Check compatibility
                         if gridcell.affinity {
@@ -442,7 +454,7 @@ fn main() {
                         }
                         let gridcell_pos =
                             Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        grid[x][y][z].velocity += p.mass
+                        grid.get_mut(&hashmap_ind).unwrap().velocity += p.mass
                             * weighting_function(p.position, (x, y, z))
                             * (p.velocity + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
                     }
@@ -473,7 +485,11 @@ fn main() {
                             let x = x as usize;
                             let y = y as usize;
                             let z = z as usize;
-                            tot_density += grid[x][y][z].mass
+                            let hashmap_ind = (x, y, z);
+                            if grid.get(&hashmap_ind).is_none() {
+                                grid.insert(hashmap_ind, Gridcell::new());
+                            }
+                            tot_density += grid.get(&hashmap_ind).unwrap().mass
                                 * weighting_function(p.position, (x, y, z)) / GRID_SPACING.powi(3);
                         }
                     }
@@ -504,16 +520,18 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
-                        let particle_volume = p.mass / p.density;
-                        if x == 0 && y == 0 && z == 0 {
-                            println!("This cell shouldn't be affected");
-                            println!("Particle pos: {}", p.position);
+                        let hashmap_ind = (x, y, z);
+                        if grid.get(&hashmap_ind).is_none() {
+                            grid.insert(hashmap_ind, Gridcell::new());
                         }
+                        
+                        let particle_volume = p.mass / p.density;
+                        
                         let m_inv = D_INV;
                         let partial_psi_partial_f = neo_hookean_partial_psi_partial_f(p.f_e * p.f_p);
                         let grid_cell_position =
                             Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        grid[x][y][z].force += -weighting_function(p.position, (x, y, z))
+                        grid.get_mut(&hashmap_ind).unwrap().force += -weighting_function(p.position, (x, y, z))
                             * particle_volume
                             * m_inv
                             * partial_psi_partial_f
@@ -596,14 +614,19 @@ fn main() {
             }
         }
         for (x, y, z) in gridcells_to_visit {
-            if grid[x][y][z].mass == 0.0 {
+            let hashmap_ind = (x, y, z);
+            if grid.get(&hashmap_ind).is_none() {
+                grid.insert(hashmap_ind, Gridcell::new());
+            }
+
+            if grid.get(&hashmap_ind).unwrap().mass == 0.0 {
                 continue;
             }
-            let grid_force = grid[x][y][z].force;
-            let grid_mass = grid[x][y][z].mass;
-            grid[x][y][z].velocity += DELTA_T * grid_force / grid_mass;
+            let grid_force = grid.get(&hashmap_ind).unwrap().force;
+            let grid_mass = grid.get(&hashmap_ind).unwrap().mass;
+            grid.get_mut(&hashmap_ind).unwrap().velocity += DELTA_T * grid_force / grid_mass;
             // Gravity
-            grid[x][y][z].velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+            grid.get_mut(&hashmap_ind).unwrap().velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
         }
 
         // g2p
@@ -631,8 +654,12 @@ fn main() {
                         let x = x as usize;
                         let y = y as usize;
                         let z = z as usize;
+                        let hashmap_ind = (x, y, z);
+                        if grid.get(&hashmap_ind).is_none() {
+                            grid.insert(hashmap_ind, Gridcell::new());
+                        }
 
-                        let gridcell = grid[x][y][z];
+                        let gridcell = grid.get(&hashmap_ind).unwrap();
 
                         
                         // Check compatibility
@@ -794,54 +821,54 @@ fn main() {
         rigid_body.orientation = update_orientation(rigid_body.orientation, get_omega(&rigid_body));
 
         // Add grid values to sim
-        match OUTPUT_GRID_DISTANCES {
-            Some(iteration_to_save) => {
-                if iteration_num == iteration_to_save {
-                    sim.add_signed_distance_field(&grid);
-                }
-            }
-            None => {},
-        }
-        match OUTPUT_GRID_VELOCITIES {
-            Some(iteration_to_save) => {
-                if iteration_num == iteration_to_save {
-                    sim.add_grid_velocities(&grid);
-                }
-            }
-            None => {},
-        }
-        match OUTPUT_GRID_AFFINITIES {
-            Some(iteration_to_save) => {
-                if iteration_num == iteration_to_save {
-                    sim.add_grid_affinities(&grid);
-                }
-            },
-            None => {},
-        }
-        match OUTPUT_GRID_DISTANCE_SIGNS {
-            Some(iteration_to_save) => {
-                if iteration_num == iteration_to_save {
-                    sim.add_grid_distance_signs(&grid);
-                }
-            },
-            None => {},
-        }
-        match OUTPUT_PARTICLE_DEFORMATION_GRADIENT {
-            Some(iteration_to_save) => {
-                if iteration_num == iteration_to_save {
-                    sim.add_particle_deformation_gradients(&particles);
-                }
-            },
-            None => {},
-        }
-        match OUTPUT_GRID_FORCES {
-            Some(iteration_to_save) => {
-                if iteration_num == iteration_to_save {
-                    sim.add_grid_forces(&grid);
-                }
-            },
-            None => {},
-        }
+        // match OUTPUT_GRID_DISTANCES {
+        //     Some(iteration_to_save) => {
+        //         if iteration_num == iteration_to_save {
+        //             sim.add_signed_distance_field(&grid);
+        //         }
+        //     }
+        //     None => {},
+        // }
+        // match OUTPUT_GRID_VELOCITIES {
+        //     Some(iteration_to_save) => {
+        //         if iteration_num == iteration_to_save {
+        //             sim.add_grid_velocities(&grid);
+        //         }
+        //     }
+        //     None => {},
+        // }
+        // match OUTPUT_GRID_AFFINITIES {
+        //     Some(iteration_to_save) => {
+        //         if iteration_num == iteration_to_save {
+        //             sim.add_grid_affinities(&grid);
+        //         }
+        //     },
+        //     None => {},
+        // }
+        // match OUTPUT_GRID_DISTANCE_SIGNS {
+        //     Some(iteration_to_save) => {
+        //         if iteration_num == iteration_to_save {
+        //             sim.add_grid_distance_signs(&grid);
+        //         }
+        //     },
+        //     None => {},
+        // }
+        // match OUTPUT_PARTICLE_DEFORMATION_GRADIENT {
+        //     Some(iteration_to_save) => {
+        //         if iteration_num == iteration_to_save {
+        //             sim.add_particle_deformation_gradients(&particles);
+        //         }
+        //     },
+        //     None => {},
+        // }
+        // match OUTPUT_GRID_FORCES {
+        //     Some(iteration_to_save) => {
+        //         if iteration_num == iteration_to_save {
+        //             sim.add_grid_forces(&grid);
+        //         }
+        //     },
+        //     None => {},
+        // }
     }
     // Since I'm dropping frames, the total number of "iterations" is different. Need to rename
     sim.num_iterations = sim.particle_positions.len();
