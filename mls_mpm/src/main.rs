@@ -576,7 +576,6 @@ fn main() {
                 let particle = particles[*p];
                 let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
                 let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
-                let gridcell_mass = grid_cell.mass;
                 let particle_volume = particle.mass / particle.density;
                         
                 let m_inv = D_INV;
@@ -614,47 +613,46 @@ fn main() {
         //     }
         // }
         let start = std::time::Instant::now();
-        let mut gridcells_to_visit: HashSet<(usize, usize, usize)> = HashSet::new();
-        for p in particles.iter() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x: i64 = base_coord.0 as i64 + dx;
-                        let y: i64 = base_coord.1 as i64 + dy;
-                        let z: i64 = base_coord.2 as i64 + dz;
-                        if x < 0
-                            || x >= GRID_LENGTH_X as i64
-                            || y < 0
-                            || y >= GRID_LENGTH_Y as i64
-                            || z < 0
-                            || z >= GRID_LENGTH_Z as i64
-                        {
-                            continue;
-                        }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        gridcells_to_visit.insert((x, y, z));
-                    }
-                }
-            }
-        }
-        for (x, y, z) in gridcells_to_visit {
-            let hashmap_ind = (x, y, z);
-            if grid.get(&hashmap_ind).is_none() {
-                grid.insert(hashmap_ind, Gridcell::new().into());
-            }
-            let mut gridcell = grid.get_mut(&hashmap_ind).unwrap().lock().unwrap();
+        // let mut gridcells_to_visit: HashSet<(usize, usize, usize)> = HashSet::new();
+        // for p in particles.iter() {
+        //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+        //     for dx in -2..3 {
+        //         for dy in -2..3 {
+        //             for dz in -2..3 {
+        //                 let x: i64 = base_coord.0 as i64 + dx;
+        //                 let y: i64 = base_coord.1 as i64 + dy;
+        //                 let z: i64 = base_coord.2 as i64 + dz;
+        //                 if x < 0
+        //                     || x >= GRID_LENGTH_X as i64
+        //                     || y < 0
+        //                     || y >= GRID_LENGTH_Y as i64
+        //                     || z < 0
+        //                     || z >= GRID_LENGTH_Z as i64
+        //                 {
+        //                     continue;
+        //                 }
+        //                 let x = x as usize;
+        //                 let y = y as usize;
+        //                 let z = z as usize;
+        //                 gridcells_to_visit.insert((x, y, z));
+        //             }
+        //         }
+        //     }
+        // }
+        grid_to_particles.read().unwrap().par_iter().for_each(|((x, y, z), _)| {
+            let mut gridcell = grid.get(&(*x, *y, *z)).unwrap().lock().unwrap();
             if gridcell.mass == 0.0 {
-                continue;
+                
             }
-            let grid_force = gridcell.force;
-            let grid_mass = gridcell.mass;
-            gridcell.velocity += DELTA_T * grid_force / grid_mass;
-            // Gravity
-            gridcell.velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+            else {
+                let grid_force = gridcell.force;
+                let grid_mass = gridcell.mass;
+                gridcell.velocity += DELTA_T * grid_force / grid_mass;
+                // Gravity
+                gridcell.velocity += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+            }
         }
+        );
         println!("Time to update grid velocities: {:?}", start.elapsed());
 
         // g2p
