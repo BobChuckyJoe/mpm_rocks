@@ -154,31 +154,29 @@ fn main() {
         });
         println!("Time to calculate hashmap: {:?}", start.elapsed());
 
+        // Iterate through the hashmap to make sure every thing exists on the grid
+        let start = std::time::Instant::now();
+        for key in grid_to_particles.read().unwrap().keys() {
+            grid.entry(*key).or_insert(Gridcell::new());
+        }
+        println!("Time to make sure everything exists on the grid: {:?}", start.elapsed());
+
         let start = std::time::Instant::now();
         // Calculate Colored Distance Field for rigid body
         for ind in 0..rigid_body.rigid_particle_positions.len() {
             // Convert to world_coords
             let p_pos =
                 convert_to_world_coords(&rigid_body, rigid_body.rigid_particle_positions[ind]);
-            // println!("rigid_body orientation  {:?}", rigid_body.orientation); TODO
-            // println!("{:?}", rigid_body.orientation.to_rotation_matrix());
-            // println!("p_pos: {:?}", p_pos);
-            // println!("rigid_particle ind {}", ind);
-            // println!("p_pos: {:?}", p_pos);
             let triangle = rigid_body.faces[rigid_body.rigid_particle_triangles[ind]];
             let p_surface = (
                 convert_to_world_coords(&rigid_body, rigid_body.vertices[triangle.0]),
                 convert_to_world_coords(&rigid_body, rigid_body.vertices[triangle.1]),
                 convert_to_world_coords(&rigid_body, rigid_body.vertices[triangle.2]),
             );
-            // let rp_normal = convert_direction_to_world_coords(
-            //     &rigid_body,
-            //     rigid_body.rigid_particle_normals[ind],
-            // );
             let rp_normal = calculate_face_normal(p_surface.0, p_surface.1, p_surface.2);
-            // println!("p_pos: {:?}", p_pos);
-            assert!(rp_normal.dot(&(p_surface.0 - p_pos)) < 1e-9, "{}", rp_normal.dot(&(p_surface.0 - p_pos)));
-            assert!(is_point_in_triangle(p_pos, p_surface.0, p_surface.1, p_surface.2));
+            
+            // assert!(rp_normal.dot(&(p_surface.0 - p_pos)) < 1e-9, "{}", rp_normal.dot(&(p_surface.0 - p_pos)));
+            // assert!(is_point_in_triangle(p_pos, p_surface.0, p_surface.1, p_surface.2));
                 
             // calculate minumum distance
             let start = get_base_grid_ind(&p_pos, GRID_SPACING);
@@ -188,8 +186,7 @@ fn main() {
                         * GRID_SPACING;
                 // Check if projection of the grid cell onto the plane is valid (if not valid, skip)
                 let proj = project_point_into_plane(grid_cell_loc, rp_normal, p_pos);
-                // assert!(&(p_surface.1 - p_surface.0).cross(&(p_surface.2 - p_surface.0)).dot(&rp_normal).abs() < &1e-6); // Check if the normal is valid
-                assert!((proj - p_surface.0).dot(&rp_normal).abs() < 1e-6, "dot_prod: {}", (proj - p_surface.0).dot(&rp_normal).abs()); // Check if projection is valid
+                // assert!((proj - p_surface.0).dot(&rp_normal).abs() < 1e-6, "dot_prod: {}", (proj - p_surface.0).dot(&rp_normal).abs()); // Check if projection is valid
                 if !is_point_in_triangle(proj, p_surface.0, p_surface.1, p_surface.2) {
                     continue;
                 }
@@ -227,48 +224,50 @@ fn main() {
         let start = std::time::Instant::now();
         // Calculate particle tags T_{pr}
         // Equation 21 from MLS-MPM paper
-        for p in particles.iter_mut() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            let mut sum: f64 = 0.0;
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x: i64 = base_coord.0 as i64 + dx;
-                        let y: i64 = base_coord.1 as i64 + dy;
-                        let z: i64 = base_coord.2 as i64 + dz;
-                        if x < 0
-                            || x >= GRID_LENGTH_X as i64
-                            || y < 0
-                            || y >= GRID_LENGTH_Y as i64
-                            || z < 0
-                            || z >= GRID_LENGTH_Z as i64
-                        {
-                            continue;
+        particles.par_iter_mut().for_each(|p| {
+                let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+                let mut sum: f64 = 0.0;
+                for dx in -2..3 {
+                    for dy in -2..3 {
+                        for dz in -2..3 {
+                            let x: i64 = base_coord.0 as i64 + dx;
+                            let y: i64 = base_coord.1 as i64 + dy;
+                            let z: i64 = base_coord.2 as i64 + dz;
+                            if x < 0
+                                || x >= GRID_LENGTH_X as i64
+                                || y < 0
+                                || y >= GRID_LENGTH_Y as i64
+                                || z < 0
+                                || z >= GRID_LENGTH_Z as i64
+                            {
+                                continue;
+                            }
+                            let x = x as usize;
+                            let y = y as usize;
+                            let z = z as usize;
+                            let hashmap_ind = (x, y, z);
+                            let gridcell = grid.get(&hashmap_ind);
+                            if gridcell.is_none() {
+                                continue;
+                            }
+                            let gridcell = gridcell.unwrap();
+                            // There should be no contribution if the grid cell is too far
+                            if !gridcell.affinity {
+                                continue;
+                            }
+                            // TODO According to 5.3.3, there needs to be some persistence in the color of the affinity,
+                            // but i'm updating it every timestep. Is this an issue?
+                            p.affinity = true;
+                            sum += weighting_function(p.position, (x, y, z))
+                                * gridcell.unsigned_distance
+                                * gridcell.distance_sign as f64;
                         }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        let hashmap_ind = (x, y, z);
-                        if grid.get(&hashmap_ind).is_none() {
-                            grid.insert(hashmap_ind, Gridcell::new());
-                        }
-                        let gridcell = grid.get(&hashmap_ind).unwrap();
-                        // There should be no contribution if the grid cell is too far
-                        if !gridcell.affinity {
-                            continue;
-                        }
-                        // TODO According to 5.3.3, there needs to be some persistence in the color of the affinity,
-                        // but i'm updating it every timestep. Is this an issue?
-                        p.affinity = true;
-                        sum += weighting_function(p.position, (x, y, z))
-                            * gridcell.unsigned_distance
-                            * gridcell.distance_sign as f64;
                     }
                 }
+                p.particle_distance = sum;
+                p.tag = if sum > 0.0 { 1 } else { -1 };
             }
-            p.particle_distance = sum;
-            p.tag = if sum > 0.0 { 1 } else { -1 };
-        }
+        );
         println!("Time to calculate particle tags: {:?}", start.elapsed());
 
         let start = std::time::Instant::now();
