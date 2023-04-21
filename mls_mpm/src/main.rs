@@ -506,71 +506,90 @@ fn main() {
         
         let start = std::time::Instant::now();
         // Grid force calculation using eq 18 from MLS-MPM paper
-        for p in particles.iter() {
-            let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let x: i64 = base_coord.0 as i64 + dx;
-                        let y: i64 = base_coord.1 as i64 + dy;
-                        let z: i64 = base_coord.2 as i64 + dz;
-                        if x < 0
-                            || x >= GRID_LENGTH_X as i64
-                            || y < 0
-                            || y >= GRID_LENGTH_Y as i64
-                            || z < 0
-                            || z >= GRID_LENGTH_Z as i64
-                        {
-                            continue;
-                        }
-                        let x = x as usize;
-                        let y = y as usize;
-                        let z = z as usize;
-                        let hashmap_ind = (x, y, z);
-                        if grid.get(&hashmap_ind).is_none() {
-                            grid.insert(hashmap_ind, Gridcell::new().into());
-                        }
+        // for p in particles.iter() {
+        //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
+        //     for dx in -2..3 {
+        //         for dy in -2..3 {
+        //             for dz in -2..3 {
+        //                 let x: i64 = base_coord.0 as i64 + dx;
+        //                 let y: i64 = base_coord.1 as i64 + dy;
+        //                 let z: i64 = base_coord.2 as i64 + dz;
+        //                 if x < 0
+        //                     || x >= GRID_LENGTH_X as i64
+        //                     || y < 0
+        //                     || y >= GRID_LENGTH_Y as i64
+        //                     || z < 0
+        //                     || z >= GRID_LENGTH_Z as i64
+        //                 {
+        //                     continue;
+        //                 }
+        //                 let x = x as usize;
+        //                 let y = y as usize;
+        //                 let z = z as usize;
+        //                 let hashmap_ind = (x, y, z);
+        //                 if grid.get(&hashmap_ind).is_none() {
+        //                     grid.insert(hashmap_ind, Gridcell::new().into());
+        //                 }
                         
-                        let particle_volume = p.mass / p.density;
+        //                 let particle_volume = p.mass / p.density;
                         
-                        let m_inv = D_INV;
-                        let partial_psi_partial_f = neo_hookean_partial_psi_partial_f(p.f_e * p.f_p);
-                        let grid_cell_position =
-                            Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        grid.get_mut(&hashmap_ind).unwrap().lock().unwrap().force += -weighting_function(p.position, (x, y, z))
-                            * particle_volume
-                            * m_inv
-                            * partial_psi_partial_f
-                            * (p.f_e * p.f_p).transpose()
-                            * (grid_cell_position - p.position);
-                        // if p.f_e.determinant() < 0.1 {
-                        //     println!("x y z: {} {} {}", x, y, z);
-                        //     println!("Big compression bad Det: {}", {p.f_e.determinant()});
-                        //     println!("Particle position: {:?}", p.position);
-                        //     println!("Particle deformation gradient: {:?}", p.f_e);
-                        //     println!("particle volume: {}", particle_volume);
-                        //     println!("m_inv: {}", m_inv);
-                        //     println!("partial_psi_partial_f: {}", partial_psi_partial_f);
-                        //     println!("grid_cell_position: {}", grid_cell_position);
-                        //     println!("p.f_e * p.f_p: {}", p.f_e * p.f_p);
-                        //     println!("grid_cell_position - p.position: {}", grid_cell_position - p.position);
-                        //     let diff = -weighting_function(p.position, (x, y, z))
-                        //     * particle_volume
-                        //     * m_inv
-                        //     * partial_psi_partial_f
-                        //     * (p.f_e * p.f_p).transpose()
-                        //     * (grid_cell_position - p.position);
-                        //     println!("diff: {}", diff);
-                        //     should_break = true;
-                        // }
-                    }
-                }
+        //                 let m_inv = D_INV;
+        //                 let partial_psi_partial_f = neo_hookean_partial_psi_partial_f(p.f_e * p.f_p);
+        //                 let grid_cell_position =
+        //                     Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
+        //                 grid.get_mut(&hashmap_ind).unwrap().lock().unwrap().force += -weighting_function(p.position, (x, y, z))
+        //                     * particle_volume
+        //                     * m_inv
+        //                     * partial_psi_partial_f
+        //                     * (p.f_e * p.f_p).transpose()
+        //                     * (grid_cell_position - p.position);
+        //                 // if p.f_e.determinant() < 0.1 {
+        //                 //     println!("x y z: {} {} {}", x, y, z);
+        //                 //     println!("Big compression bad Det: {}", {p.f_e.determinant()});
+        //                 //     println!("Particle position: {:?}", p.position);
+        //                 //     println!("Particle deformation gradient: {:?}", p.f_e);
+        //                 //     println!("particle volume: {}", particle_volume);
+        //                 //     println!("m_inv: {}", m_inv);
+        //                 //     println!("partial_psi_partial_f: {}", partial_psi_partial_f);
+        //                 //     println!("grid_cell_position: {}", grid_cell_position);
+        //                 //     println!("p.f_e * p.f_p: {}", p.f_e * p.f_p);
+        //                 //     println!("grid_cell_position - p.position: {}", grid_cell_position - p.position);
+        //                 //     let diff = -weighting_function(p.position, (x, y, z))
+        //                 //     * particle_volume
+        //                 //     * m_inv
+        //                 //     * partial_psi_partial_f
+        //                 //     * (p.f_e * p.f_p).transpose()
+        //                 //     * (grid_cell_position - p.position);
+        //                 //     println!("diff: {}", diff);
+        //                 //     should_break = true;
+        //                 // }
+        //             }
+        //         }
 
+        //     }
+        //     // if (p.f_e.determinant() < 0.1) {
+        //     //     panic!();
+        //     // }
+        // }
+        grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
+            for p in particle_set.lock().unwrap().iter() {
+                let particle = particles[*p];
+                let mut grid_cell = grid.get(key).unwrap().lock().unwrap();
+                let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
+                let gridcell_mass = grid_cell.mass;
+                let particle_volume = particle.mass / particle.density;
+                        
+                let m_inv = D_INV;
+                let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
+                grid_cell.force += -weighting_function(particle.position, (key.0, key.1, key.2))
+                    * particle_volume
+                    * m_inv
+                    * partial_psi_partial_f
+                    * (particle.f_e * particle.f_p).transpose()
+                    * (gridcell_pos - particle.position);
             }
-            // if (p.f_e.determinant() < 0.1) {
-            //     panic!();
-            // }
         }
+        );
         println!("Time to update grid forces: {:?}", start.elapsed());
         // println!("Grid force of grid[20][17][9]: {}", grid[20][17][9].force);
         // if should_break {
