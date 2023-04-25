@@ -120,7 +120,7 @@ fn main() {
 
     println!("Initialization stuff done!");
     for iteration_num in tqdm(0..N_ITERATIONS) {
-        println!("START OF INTERATION {}", iteration_num);
+        // println!("START OF INTERATION {}", iteration_num);
         // println!("Rigid body position: {:?}", rigid_body.position);
         // println!("Rigid body velocity: {:?}", rigid_body.velocity);
         // println!("Rigid body orientation: {:?}", rigid_body.orientation);
@@ -751,14 +751,9 @@ fn main() {
         //     }
         // }
         active_inds.par_iter().for_each(|ind| {
-            for neighbor in get_neighbor_gridcells(ind, GRID_LENGTHS) {
-                let gridcell = grid.get(&neighbor);
-                if gridcell.is_none() {
-                    continue;
-                }
-                let gridcell = gridcell.unwrap();
+                let gridcell = grid.get(ind).unwrap();
                 if gridcell.mass.get() == 0.0 {
-                    continue;
+                    return;
                 }
                 else {
                     let grid_force = gridcell.force.get();
@@ -771,7 +766,6 @@ fn main() {
                     }
                 }
             }
-        }
         );
         if PRINT_TIMINGS {
             println!("Time to update grid velocities: {:?}", start.elapsed());

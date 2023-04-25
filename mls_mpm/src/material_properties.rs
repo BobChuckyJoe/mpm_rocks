@@ -76,7 +76,7 @@ pub fn neo_hookean_partial_psi_partial_f(deformation_gradient: Matrix3<f64>) -> 
 }
 
 // Drucker-Prager sand
-const SAND_YOUNGS_MODULUS: f64 = 1.4e5; //3.5e7;
+const SAND_YOUNGS_MODULUS: f64 = 1.4e6; //3.5e7;
 const SAND_POISSONS_RATIO: f64 = 0.2;
 const SAND_MU_0: f64 = SAND_YOUNGS_MODULUS / (2.0 * (1.0 + SAND_POISSONS_RATIO));
 const SAND_LAMBDA_0: f64 = SAND_YOUNGS_MODULUS * SAND_POISSONS_RATIO / ((1.0 + SAND_POISSONS_RATIO) * (1.0 - 2.0 * SAND_POISSONS_RATIO)); // lame parameter

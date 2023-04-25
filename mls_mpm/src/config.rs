@@ -4,9 +4,9 @@ use crate::particle_init::uniform_sphere_centered_at_middle;
 use crate::types::Particle;
 
 pub const SIMULATION_DIMENSIONS: (f64, f64, f64) = (10.0, 10.0, 10.0);
-pub const GRID_LENGTH_X: usize = 100;
-pub const GRID_LENGTH_Y: usize = 100;
-pub const GRID_LENGTH_Z: usize = 100;
+pub const GRID_LENGTH_X: usize = 30;
+pub const GRID_LENGTH_Y: usize = 30;
+pub const GRID_LENGTH_Z: usize = 30;
 pub const GRID_LENGTHS: (usize, usize, usize) = (GRID_LENGTH_X, GRID_LENGTH_Y, GRID_LENGTH_Z);
 
 pub const GRID_SPACING: f64 = SIMULATION_DIMENSIONS.0 / GRID_LENGTH_X as f64;
@@ -27,7 +27,8 @@ pub const PENALTY_STIFFNESS: f64 = 1e6;
 pub const BOUNDARY_C: f64 = 0.1; // Used to calculate v tilde (in equation 27 and 28 of MLS MPM paper)
 
 // For output things
-pub const TIME_TO_SAVE: Option<usize> = Some(N_ITERATIONS - 1);
+// pub const TIME_TO_SAVE: Option<usize> = Some(N_ITERATIONS - 1);
+pub const TIME_TO_SAVE: Option<usize> = Some(1);
 pub const OUTPUT_GRID_DISTANCES: Option<usize> = TIME_TO_SAVE; // usize is the timestep we want to save
 pub const OUTPUT_GRID_DISTANCE_SIGNS: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_GRID_VELOCITIES: Option<usize> = TIME_TO_SAVE;
