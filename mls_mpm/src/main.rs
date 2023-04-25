@@ -2,6 +2,7 @@ mod config;
 mod equations;
 mod icosahedron;
 mod final_sim_config;
+mod fileoutput;
 mod math_utils;
 mod obj_loader;
 mod particle_init;
@@ -10,7 +11,7 @@ mod tests;
 mod types;
 mod material_properties;
 
-use std::collections::{HashSet, HashMap, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -20,16 +21,21 @@ use rayon::prelude::*;
 // use obj::{load_obj, Obj};
 use tqdm::tqdm;
 
-use crate::config::{
-    BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH_X, GRID_LENGTH_Y, GRID_LENGTH_Z, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_DIMENSIONS, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES, TIME_TO_SAVE, GRID_LENGTHS, PRINT_TIMINGS
-};
+// use crate::config::{
+//     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH_X, GRID_LENGTH_Y, GRID_LENGTH_Z, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
+//     PENALTY_STIFFNESS, SIMULATION_DIMENSIONS, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES, TIME_TO_SAVE, GRID_LENGTHS, PRINT_TIMINGS, PARTICLE_INIT_FUNC, RIGID_BODY_INITIAL_POSITION, RIGID_BODY_INITIAL_VELOCITY, RIGID_BODY_INITIAL_ANGULAR_MOMENTUM
+// };
+
+/// For swapping out different simulations and different configurations
+use crate::config::*;
+
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
     convert_world_direction_to_local, get_base_grid_ind, grad_weighting_function, velocity_projection,
     grid_cell_ind_to_world_coords, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
-use crate::final_sim_config::is_in_bounds;
+use crate::fileoutput::FileOutput;
+// use crate::final_sim_config::is_in_bounds;
 use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f, project_to_yield_surface, H_0, H_2, H_3, H_1, sand_partial_psi_partial_f, SAND_DENSITY};
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal, get_neighbor_gridcells};
@@ -96,17 +102,19 @@ fn main() {
         Vec::new(),
         Vec::new(),
     );
+    // Write the large data to disk instead of keeping it in memory
+    let mut file_output = FileOutput::new("jello".to_string(), std::fs::read_to_string(RIGID_BODY_PATH).unwrap());
     // let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, SAND_DENSITY);
-    let mut particles: Vec<Particle> = final_sim_config::slope_particle_init();
+    let mut particles: Vec<Particle> = PARTICLE_INIT_FUNC();
     let mut grid: BTreeMap<(usize, usize, usize), Gridcell> = BTreeMap::new();
 
     println!("Current directory: {:?}", std::env::current_dir());
 
     let mut rigid_body: RigidBody = load_rigid_body(RIGID_BODY_PATH, GRANITE_DENSITY);
     sim.add_rigid_body_mesh_data(&rigid_body);
-    rigid_body.position = final_sim_config::RIGID_BODY_INITIAL_POSITION;
-    rigid_body.velocity = final_sim_config::RIGID_BODY_INITIAL_VELOCITY;
-    rigid_body.angular_momentum = Vector3::new(0.0, 10000.0, 0.0);
+    rigid_body.position = RIGID_BODY_INITIAL_POSITION;
+    rigid_body.velocity = RIGID_BODY_INITIAL_VELOCITY;
+    rigid_body.angular_momentum = RIGID_BODY_INITIAL_ANGULAR_MOMENTUM;
     println!("Orientation: {:?}", rigid_body.orientation);
     println!("Rigid body mass: {}", rigid_body.mass);
 
@@ -122,8 +130,8 @@ fn main() {
         if PRINT_TIMINGS {
             start = std::time::Instant::now();
         }
-        let should_save = iteration_num % 20 == 0;
-        // let should_save = true;
+        // let should_save = iteration_num % 20 == 0;
+        let should_save = true;
         // let should_save = false;
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
         match TIME_TO_SAVE {
@@ -131,13 +139,14 @@ fn main() {
                 if iteration_num == x || should_save {
                     sim.add_particle_pos(&particles);
                     sim.add_rigid_body_stuff(&rigid_body);
+                    // file_output.write_frame(&rigid_body, &particles)
                 }
             }
             None  => {
                 if should_save{
-                    // Write the locations every 40 miliseconds, which corresponds to 25 fps
                     sim.add_particle_pos(&particles);
                     sim.add_rigid_body_stuff(&rigid_body);
+                    // file_output.write_frame(&rigid_body, &particles)
                 }
             }
         }
@@ -851,23 +860,23 @@ fn main() {
             p.apic_b = b_new;
             
             // Boundary conditions
-            // if p.position.x < BOUNDARY
-            //     || p.position.y < BOUNDARY
-            //     || p.position.z < BOUNDARY
-            //     || p.position.x > SIMULATION_SIZE - BOUNDARY
-            //     || p.position.y > SIMULATION_SIZE - BOUNDARY
-            //     || p.position.z > SIMULATION_SIZE - BOUNDARY
-            // {
-            //     p.velocity = Vector3::new(0.0, 0.0, 0.0);
-            //     p.apic_b = Matrix3::zeros();
-            //     p.position.x = p.position.x.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
-            //     p.position.y = p.position.y.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
-            //     p.position.z = p.position.z.clamp(BOUNDARY, SIMULATION_SIZE - BOUNDARY);
-            // }
-            if !is_in_bounds(p.position) {
+            if p.position.x < BOUNDARY
+                || p.position.y < BOUNDARY
+                || p.position.z < BOUNDARY
+                || p.position.x > SIMULATION_DIMENSIONS.0 - BOUNDARY
+                || p.position.y > SIMULATION_DIMENSIONS.1 - BOUNDARY
+                || p.position.z > SIMULATION_DIMENSIONS.2 - BOUNDARY
+            {
                 p.velocity = Vector3::new(0.0, 0.0, 0.0);
                 p.apic_b = Matrix3::zeros();
+                p.position.x = p.position.x.clamp(BOUNDARY, SIMULATION_DIMENSIONS.0 - BOUNDARY);
+                p.position.y = p.position.y.clamp(BOUNDARY, SIMULATION_DIMENSIONS.1 - BOUNDARY);
+                p.position.z = p.position.z.clamp(BOUNDARY, SIMULATION_DIMENSIONS.2 - BOUNDARY);
             }
+            // if !is_in_bounds(p.position) {
+            //     p.velocity = Vector3::new(0.0, 0.0, 0.0);
+            //     p.apic_b = Matrix3::zeros();
+            // }
         });
         if PRINT_TIMINGS {
             println!("Time to g2p: {:?}", start.elapsed());
@@ -969,12 +978,12 @@ fn main() {
         rigid_body.angular_momentum += *tot_change_in_angular_momentum.lock().unwrap();
 
         // Boundary condition for rigid body
-        if rigid_body.position.x < final_sim_config::BOUNDARY
-            || rigid_body.position.y < final_sim_config::BOUNDARY
-            || rigid_body.position.z < final_sim_config::BOUNDARY
-            || rigid_body.position.x > final_sim_config::SIMULATION_DIMENSIONS.0 - final_sim_config::BOUNDARY
-            || rigid_body.position.y > final_sim_config::SIMULATION_DIMENSIONS.1 - final_sim_config::BOUNDARY
-            || rigid_body.position.z > final_sim_config::SIMULATION_DIMENSIONS.2 - final_sim_config::BOUNDARY
+        if rigid_body.position.x < BOUNDARY
+            || rigid_body.position.y < BOUNDARY
+            || rigid_body.position.z < BOUNDARY
+            || rigid_body.position.x > SIMULATION_DIMENSIONS.0 - BOUNDARY
+            || rigid_body.position.y > SIMULATION_DIMENSIONS.1 - BOUNDARY
+            || rigid_body.position.z > SIMULATION_DIMENSIONS.2 - BOUNDARY
         {
             rigid_body.velocity = Vector3::new(0.0, 0.0, 0.0);
         }
@@ -984,54 +993,54 @@ fn main() {
         rigid_body.orientation = update_orientation(rigid_body.orientation, get_omega(&rigid_body));
 
         // Add grid values to sim
-        // match OUTPUT_GRID_DISTANCES {
-        //     Some(iteration_to_save) => {
-        //         if iteration_num == iteration_to_save {
-        //             sim.add_signed_distance_field(&grid);
-        //         }
-        //     }
-        //     None => {},
-        // }
-        // match OUTPUT_GRID_VELOCITIES {
-        //     Some(iteration_to_save) => {
-        //         if iteration_num == iteration_to_save {
-        //             sim.add_grid_velocities(&grid);
-        //         }
-        //     }
-        //     None => {},
-        // }
-        // match OUTPUT_GRID_AFFINITIES {
-        //     Some(iteration_to_save) => {
-        //         if iteration_num == iteration_to_save {
-        //             sim.add_grid_affinities(&grid);
-        //         }
-        //     },
-        //     None => {},
-        // }
-        // match OUTPUT_GRID_DISTANCE_SIGNS {
-        //     Some(iteration_to_save) => {
-        //         if iteration_num == iteration_to_save {
-        //             sim.add_grid_distance_signs_from_hashmap(&mut grid, GRID_LENGTHS);
-        //         }
-        //     },
-        //     None => {},
-        // }
-        // match OUTPUT_PARTICLE_DEFORMATION_GRADIENT {
-        //     Some(iteration_to_save) => {
-        //         if iteration_num == iteration_to_save {
-        //             sim.add_particle_deformation_gradients(&particles);
-        //         }
-        //     },
-        //     None => {},
-        // }
-        // match OUTPUT_GRID_FORCES {
-        //     Some(iteration_to_save) => {
-        //         if iteration_num == iteration_to_save {
-        //             sim.add_grid_forces(&grid);
-        //         }
-        //     },
-        //     None => {},
-        // }
+        match OUTPUT_GRID_DISTANCES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_signed_distance_field_from_hashmap(&grid, GRID_LENGTHS);
+                }
+            }
+            None => {},
+        }
+        match OUTPUT_GRID_VELOCITIES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_velocities_from_hashmap(&grid, GRID_LENGTHS);
+                }
+            }
+            None => {},
+        }
+        match OUTPUT_GRID_AFFINITIES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_affinities_from_hashmap(&grid, GRID_LENGTHS);
+                }
+            },
+            None => {},
+        }
+        match OUTPUT_GRID_DISTANCE_SIGNS {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_distance_signs_from_hashmap(&grid, GRID_LENGTHS);
+                }
+            },
+            None => {},
+        }
+        match OUTPUT_PARTICLE_DEFORMATION_GRADIENT {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_particle_deformation_gradients(&particles);
+                }
+            },
+            None => {},
+        }
+        match OUTPUT_GRID_FORCES {
+            Some(iteration_to_save) => {
+                if iteration_num == iteration_to_save {
+                    sim.add_grid_forces_from_hashmap(&grid, GRID_LENGTHS);
+                }
+            },
+            None => {},
+        }
     }
     // Since I'm dropping frames, the total number of "iterations" is different. Need to rename
     sim.num_iterations = sim.particle_positions.len();

@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod tests {
     use nalgebra::{Matrix3, Vector3};
-    use crate::config::{GRID_SPACING, GRID_LENGTH};
-    use crate::{math_utils::is_point_in_triangle, config::SIMULATION_SIZE};
+    use crate::config::{GRID_SPACING, GRID_LENGTHS};
+    use crate::{math_utils::is_point_in_triangle, SIMULATION_DIMENSIONS};
     use crate::equations::{get_base_grid_ind, weighting_function};
     #[test]
     fn test_point_in_triangle() {
@@ -23,7 +23,7 @@ mod tests {
     
     #[test]
     fn test_weighting_function_sums_to_unity() {
-        let particle_position = Vector3::<f64>::new(1.0, 1.0, 1.0) * SIMULATION_SIZE / 2.0;
+        let particle_position = Vector3::<f64>::new(1.0, 1.0, 1.0) * SIMULATION_DIMENSIONS.0 / 2.0;
         let particle_base_coord = get_base_grid_ind(&particle_position, GRID_SPACING);  
         
         let mut weighting_sum = 0.0;
@@ -34,11 +34,11 @@ mod tests {
                     let y = particle_base_coord.1 as i64 + dy;
                     let z = particle_base_coord.2 as i64 + dz;
                     if x < 0
-                        || x >= GRID_LENGTH as i64
+                        || x >= GRID_LENGTHS.0 as i64
                         || y < 0
-                        || y >= GRID_LENGTH as i64
+                        || y >= GRID_LENGTHS.1 as i64
                         || z < 0
-                        || z >= GRID_LENGTH as i64
+                        || z >= GRID_LENGTHS.2 as i64
                     {
                         continue;
                     }

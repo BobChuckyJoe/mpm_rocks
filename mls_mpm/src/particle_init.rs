@@ -4,7 +4,7 @@ use nalgebra::{Matrix3, Vector3};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 
-use crate::config::{N_PARTICLES, SIMULATION_SIZE};
+use crate::config::{N_PARTICLES, SIMULATION_DIMENSIONS};
 use crate::material_properties::{H_0, H_1, H_3, H_2};
 use crate::types::Particle;
 
@@ -23,12 +23,11 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
 
         let p = Particle {
             position: Vector3::new(x, y, z) * radius
-                // + Vector3::new(
-                //     SIMULATION_SIZE / 2.0,
-                //     SIMULATION_SIZE / 2.0,
-                //     SIMULATION_SIZE / 2.0, // TODO change this back to center
-                // ),
-                + Vector3::new(15.0, 2.5, 20.0),
+                + Vector3::new(
+                    SIMULATION_DIMENSIONS.0 / 2.0,
+                    SIMULATION_DIMENSIONS.1 / 2.0,
+                    SIMULATION_DIMENSIONS.2 / 2.0, // TODO change this back to center
+                ),
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
             mass: 1.0,

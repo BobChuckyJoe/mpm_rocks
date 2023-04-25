@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -151,7 +151,7 @@ impl Simulation {
         self.unsigned_distance_field.push(to_ret);
     }
 
-    pub fn add_signed_distance_field_from_hashmap(&mut self, grid: HashMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
+    pub fn add_signed_distance_field_from_hashmap(&mut self, grid: &BTreeMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
         let mut to_ret: Vec<Vec<Vec<f64>>> = Vec::new();
         for i in 0..grid_lengths.0 {
             let mut inner: Vec<Vec<f64>> = Vec::new();
@@ -186,6 +186,27 @@ impl Simulation {
         }
         self.grid_velocities.push(to_ret);
     }
+
+    pub fn add_grid_velocities_from_hashmap(&mut self, grid: &BTreeMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
+        let mut to_ret: Vec<Vec<Vec<[f64; 3]>>> = Vec::new();
+        for i in 0..grid_lengths.0 {
+            let mut inner: Vec<Vec<[f64; 3]>> = Vec::new();
+            for j in 0..grid_lengths.1 {
+                let mut inner_2: Vec<[f64; 3]> = Vec::new();
+                for k in 0..grid_lengths.2 {
+                    if grid.contains_key(&(i, j, k)) {
+                        inner_2.push(vector3_to_array(grid[&(i, j, k)].velocity.get()));
+                    } else {
+                        inner_2.push([0.0, 0.0, 0.0]);
+                    }
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.grid_velocities.push(to_ret);
+    }
+
     pub fn add_grid_affinities(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {
         let mut to_ret: Vec<Vec<Vec<bool>>> = Vec::new();
         for i in 0..grid.len() {
@@ -201,6 +222,27 @@ impl Simulation {
         }
         self.grid_affinities.push(to_ret);
     }
+    pub fn add_grid_affinities_from_hashmap(&mut self, grid: &BTreeMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
+        let mut to_ret: Vec<Vec<Vec<bool>>> = Vec::new();
+        for i in 0..grid_lengths.0 {
+            let mut inner: Vec<Vec<bool>> = Vec::new();
+            for j in 0..grid_lengths.1 {
+                let mut inner_2: Vec<bool> = Vec::new();
+                for k in 0..grid_lengths.2 {
+                    if grid.contains_key(&(i, j, k)) {
+                        inner_2.push(grid[&(i, j, k)].affinity);
+                    } else {
+                        inner_2.push(false);
+                    }
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.grid_affinities.push(to_ret);
+    }
+
+
     pub fn add_grid_distance_signs(&mut self, grid: &Vec<Vec<Vec<Gridcell>>>) {
         let mut to_ret: Vec<Vec<Vec<i32>>> = Vec::new();
         for i in 0..grid.len() {
@@ -217,7 +259,7 @@ impl Simulation {
         self.grid_distance_signs.push(to_ret);
     }
 
-    pub fn add_grid_distance_signs_from_hashmap(&mut self, grid: &mut HashMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
+    pub fn add_grid_distance_signs_from_hashmap(&mut self, grid: &BTreeMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
         let mut to_ret: Vec<Vec<Vec<i32>>> = Vec::new();
         for i in 0..grid_lengths.0 {
             let mut inner: Vec<Vec<i32>> = Vec::new();
@@ -245,6 +287,26 @@ impl Simulation {
                 let mut inner_2: Vec<[f64; 3]> = Vec::new();
                 for k in 0..grid[i][j].len() {
                     inner_2.push(vector3_to_array(grid[i][j][k].force.get()));
+                }
+                inner.push(inner_2);
+            }
+            to_ret.push(inner);
+        }
+        self.grid_forces.push(to_ret);
+    }
+
+    pub fn add_grid_forces_from_hashmap(&mut self, grid: &BTreeMap<(usize, usize, usize), Gridcell>, grid_lengths: (usize, usize, usize)) {
+        let mut to_ret: Vec<Vec<Vec<[f64; 3]>>> = Vec::new();
+        for i in 0..grid_lengths.0 {
+            let mut inner: Vec<Vec<[f64; 3]>> = Vec::new();
+            for j in 0..grid_lengths.1 {
+                let mut inner_2: Vec<[f64; 3]> = Vec::new();
+                for k in 0..grid_lengths.2 {
+                    if grid.contains_key(&(i, j, k)) {
+                        inner_2.push(vector3_to_array(grid[&(i, j, k)].force.get()));
+                    } else {
+                        inner_2.push([0.0, 0.0, 0.0]);
+                    }
                 }
                 inner.push(inner_2);
             }
