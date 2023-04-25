@@ -1,5 +1,9 @@
 pub const SIMULATION_SIZE: f64 = 10.0;
-pub const GRID_LENGTH: usize = 100;
+pub const GRID_LENGTH_X: usize = 100;
+pub const GRID_LENGTH_Y: usize = 100;
+pub const GRID_LENGTH_Z: usize = 100;
+pub const GRID_LENGTHS: (usize, usize, usize) = (GRID_LENGTH_X, GRID_LENGTH_Y, GRID_LENGTH_Z);
+
 pub const GRID_SPACING: f64 = SIMULATION_SIZE / GRID_LENGTH as f64;
 pub const DELTA_T: f64 = 0.001;
 pub const N_PARTICLES: usize = 1000;

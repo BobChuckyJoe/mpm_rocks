@@ -10,8 +10,7 @@ mod tests;
 mod types;
 mod material_properties;
 
-use std::borrow::{Borrow, BorrowMut};
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashSet, HashMap, BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -21,9 +20,9 @@ use rayon::prelude::*;
 // use obj::{load_obj, Obj};
 use tqdm::tqdm;
 
-use crate::final_sim_config::{
+use crate::config::{
     BOUNDARY, BOUNDARY_C, DELTA_T, GRID_LENGTH_X, GRID_LENGTH_Y, GRID_LENGTH_Z, GRID_SPACING, N_ITERATIONS, N_PARTICLES,
-    PENALTY_STIFFNESS, SIMULATION_DIMENSIONS, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES, TIME_TO_SAVE, GRID_LENGTHS
+    PENALTY_STIFFNESS, SIMULATION_DIMENSIONS, OUTPUT_GRID_AFFINITIES, OUTPUT_GRID_DISTANCES, OUTPUT_GRID_VELOCITIES, RIGID_BODY_PATH, OUTPUT_GRID_DISTANCE_SIGNS, OUTPUT_PARTICLE_DEFORMATION_GRADIENT, OUTPUT_GRID_FORCES, TIME_TO_SAVE, GRID_LENGTHS, PRINT_TIMINGS
 };
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
@@ -33,7 +32,7 @@ use crate::equations::{
 use crate::final_sim_config::is_in_bounds;
 use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f, project_to_yield_surface, H_0, H_2, H_3, H_1, sand_partial_psi_partial_f, SAND_DENSITY};
 use crate::obj_loader::load_rigid_body;
-use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal};
+use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal, get_neighbor_gridcells};
 use crate::serialize::Simulation;
 use crate::types::{Gridcell, Particle, RigidBody};
 
@@ -43,6 +42,32 @@ use crate::types::{Gridcell, Particle, RigidBody};
 //                            0.0, 0.0, 3.0 / GRID_SPACING / GRID_SPACING);
 const D_INV: f64 = 3.0 / GRID_SPACING / GRID_SPACING; // Constant since we're using a cubic spline
 
+pub fn calculate_hashmap(particles: &Vec<Particle>, grid_to_particles: &mut BTreeMap<(usize, usize, usize), Vec<usize>>) {
+    for p_ind in 0..particles.len() {
+        let gridcell = get_base_grid_ind(&particles[p_ind].position, GRID_SPACING);
+        // for dx in -2..3 {
+        //     for dy in -2..3 {
+        //         for dz in -2..3 {
+                    // let gridcell = (gridcell.0 as isize + dx, gridcell.1 as isize + dy, gridcell.2 as isize + dz);
+                    // if gridcell.0 < 0 || gridcell.0 >= GRID_LENGTH_X as isize ||
+                    // gridcell.1 < 0 || gridcell.1 >= GRID_LENGTH_Y as isize ||
+                    // gridcell.2 < 0 || gridcell.2 >= GRID_LENGTH_Z as isize {
+                        // continue;
+                    // }
+                    let gridcell = (gridcell.0 as usize, gridcell.1 as usize, gridcell.2 as usize);
+                    
+                    if grid_to_particles.get(&gridcell).is_none() {
+                        let mut new_vec: Vec<usize> = vec![];
+                        new_vec.push(p_ind);
+                        grid_to_particles.insert(gridcell, new_vec);
+                    } else {
+                        grid_to_particles.get_mut(&gridcell).unwrap().push(p_ind);
+                    }
+                }
+            // }
+        // }
+    // }
+}
 
 fn main() {
     let mut sim = Simulation::new(
@@ -73,7 +98,7 @@ fn main() {
     );
     // let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, SAND_DENSITY);
     let mut particles: Vec<Particle> = final_sim_config::slope_particle_init();
-    let mut grid: HashMap<(usize, usize, usize), Gridcell> = HashMap::new();
+    let mut grid: BTreeMap<(usize, usize, usize), Gridcell> = BTreeMap::new();
 
     println!("Current directory: {:?}", std::env::current_dir());
 
@@ -87,14 +112,16 @@ fn main() {
 
     println!("Initialization stuff done!");
     for iteration_num in tqdm(0..N_ITERATIONS) {
-        // println!("START OF INTERATION {}", iteration_num);
+        println!("START OF INTERATION {}", iteration_num);
         // println!("Rigid body position: {:?}", rigid_body.position);
         // println!("Rigid body velocity: {:?}", rigid_body.velocity);
         // println!("Rigid body orientation: {:?}", rigid_body.orientation);
         // println!("Rigid body angular momentum: {:?}", rigid_body.angular_momentum);
         // println!("particle 0 velocity: {:?}", particles[0].velocity);
-        
-        let start = std::time::Instant::now();
+        let mut start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         let should_save = iteration_num % 20 == 0;
         // let should_save = true;
         // let should_save = false;
@@ -114,7 +141,9 @@ fn main() {
                 }
             }
         }
-        // println!("Time to save: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to save: {:?}", start.elapsed());
+        }
         
         // Reset grid
         // for i in 0..GRID_LENGTH {
@@ -124,71 +153,91 @@ fn main() {
         //         }
         //     }
         // }   
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         for gridcell in grid.values_mut() {
             gridcell.reset_values();
         }
-        // println!("Time to reset grid: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to reset grid: {:?}", start.elapsed());
+        }
         
         // Update rigid body velocity and momentum at the very end!
         let tot_change_in_angular_momentum: Arc<Mutex<nalgebra::Matrix<f64, nalgebra::Const<3>, nalgebra::Const<1>, nalgebra::ArrayStorage<f64, 3, 1>>>> = Arc::new(Mutex::new(Vector3::new(0.0, 0.0, 0.0)));
         let tot_change_in_linear_velocity = Arc::new(Mutex::new(Vector3::new(0.0, 0.0, 0.0)));
         
         // Calculate a Hashmap that maps each gridcell to the set of particles that are affected by it
-        let start = std::time::Instant::now();
-        let grid_to_particles: std::sync::RwLock<HashMap<(usize, usize, usize), Mutex<HashSet<usize>>>> = std::sync::RwLock::new(HashMap::new());
-        particles.par_iter().enumerate().for_each(|(ind, p)| {
-            let gridcell = get_base_grid_ind(&particles[ind].position, GRID_SPACING);
-            for dx in -2..3 {
-                for dy in -2..3 {
-                    for dz in -2..3 {
-                        let gridcell = (gridcell.0 as isize + dx, gridcell.1 as isize + dy, gridcell.2 as isize + dz);
-                        if gridcell.0 < 0 || gridcell.0 >= GRID_LENGTH_X as isize ||
-                        gridcell.1 < 0 || gridcell.1 >= GRID_LENGTH_Y as isize ||
-                        gridcell.2 < 0 || gridcell.2 >= GRID_LENGTH_Z as isize {
-                            continue;
-                        }
-                        let gridcell = (gridcell.0 as usize, gridcell.1 as usize, gridcell.2 as usize);
-                        let gridcell_read = grid_to_particles.read().unwrap();
-                        let gridcell_set = gridcell_read.get(&gridcell);
-                        match gridcell_set {
-                            Some(x) => {
-                                x.lock().unwrap().insert(ind);
-                            }
-                            None => {
-                                drop(gridcell_read);
-                                let mut new_set = HashSet::new();
-                                new_set.insert(ind);
-                                grid_to_particles.write().unwrap().insert(gridcell, Mutex::new(new_set));
-                            }
-                        }
-                    }
-                }
-            }
-            let gridcell_read = grid_to_particles.read().unwrap();
-            let gridcell_set = gridcell_read.get(&gridcell);
-            match gridcell_set {
-                Some(x) => {
-                    x.lock().unwrap().insert(ind);
-                }
-                None => {
-                    drop(gridcell_read);
-                    let mut new_set = HashSet::new();
-                    new_set.insert(ind);
-                    grid_to_particles.write().unwrap().insert(gridcell, Mutex::new(new_set));
-                }
-            }
-        });
-        // println!("Time to calculate hashmap: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
+        let mut grid_to_particles: BTreeMap<(usize, usize, usize), Vec<usize>> = BTreeMap::new();
+        // particles.par_iter().enumerate().for_each(|(ind, p)| {
+        //     let gridcell = get_base_grid_ind(&particles[ind].position, GRID_SPACING);
+        //     for dx in -2..3 {
+        //         for dy in -2..3 {
+        //             for dz in -2..3 {
+        //                 let gridcell = (gridcell.0 as isize + dx, gridcell.1 as isize + dy, gridcell.2 as isize + dz);
+        //                 if gridcell.0 < 0 || gridcell.0 >= GRID_LENGTH_X as isize ||
+        //                 gridcell.1 < 0 || gridcell.1 >= GRID_LENGTH_Y as isize ||
+        //                 gridcell.2 < 0 || gridcell.2 >= GRID_LENGTH_Z as isize {
+        //                     continue;
+        //                 }
+        //                 let gridcell = (gridcell.0 as usize, gridcell.1 as usize, gridcell.2 as usize);
+        //                 let gridcell_read = grid_to_particles.read().unwrap();
+        //                 let gridcell_set = gridcell_read.get(&gridcell);
+        //                 match gridcell_set {
+        //                     Some(x) => {
+        //                         x.lock().unwrap().insert(ind);
+        //                     }
+        //                     None => {
+        //                         drop(gridcell_read);
+        //                         let mut new_set = HashSet::new();
+        //                         new_set.insert(ind);
+        //                         grid_to_particles.write().unwrap().insert(gridcell, Mutex::new(new_set));
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     // let gridcell_read = grid_to_particles.read().unwrap();
+        //     // let gridcell_set = gridcell_read.get(&gridcell);
+        //     // match gridcell_set {
+        //     //     Some(x) => {
+        //     //         x.lock().unwrap().insert(ind);
+        //     //     }
+        //     //     None => {
+        //     //         drop(gridcell_read);
+        //     //         let mut new_set = HashSet::new();
+        //     //         new_set.insert(ind);
+        //     //         grid_to_particles.write().unwrap().insert(gridcell, Mutex::new(new_set));
+        //     //     }
+        //     // }
+        // });
+        calculate_hashmap(&particles, &mut grid_to_particles);
+        if PRINT_TIMINGS {
+            println!("Time to calculate hashmap: {:?}", start.elapsed());
+        }
+        
 
         // Iterate through the hashmap to make sure every thing exists on the grid
-        let start = std::time::Instant::now();
-        for key in grid_to_particles.read().unwrap().keys() {
-            grid.entry(*key).or_insert(Gridcell::new().into());
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
         }
-        // println!("Time to make sure everything exists on the grid: {:?}", start.elapsed());
-
-        let start = std::time::Instant::now();
+        let mut active_inds: BTreeSet<(usize, usize, usize)> = BTreeSet::new();
+        for key in grid_to_particles.keys() {
+            for neighbor in get_neighbor_gridcells(key, GRID_LENGTHS) {
+                grid.entry(neighbor).or_insert(Gridcell::new().into());
+                active_inds.insert(neighbor);
+            }
+        }
+        if PRINT_TIMINGS {
+            println!("Time to make sure everything exists on the grid: {:?}", start.elapsed());
+        }
+        
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         // Calculate Colored Distance Field for rigid body
         for ind in 0..rigid_body.rigid_particle_positions.len() {
             // Convert to world_coords
@@ -247,9 +296,13 @@ fn main() {
                 }
             }
         }
-        // println!("Time to calculate CDF: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to calculate CDF: {:?}", start.elapsed());
+        }
         
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         // Calculate particle tags T_{pr}
         // Equation 21 from MLS-MPM paper
         particles.par_iter_mut().for_each(|p| {
@@ -297,9 +350,13 @@ fn main() {
                 p.tag = if sum > 0.0 { 1 } else { -1 };
             }
         );
-        // println!("Time to calculate particle tags: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to calculate particle tags: {:?}", start.elapsed());
+        }
 
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         // Calculate particle normals and particle distances from section 5.3.2
         particles.par_iter_mut().for_each(|p| {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -339,11 +396,14 @@ fn main() {
             }
         }
         );
-        // println!("Time to calculate particle normals: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to calculate particle normals: {:?}", start.elapsed());
+        }
 
         // CPIC p2g
-
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         //mass
         // for p in particles.iter() {
         //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -380,20 +440,31 @@ fn main() {
         //         }
         //     }
         // }
-        grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
-            for p in particle_set.lock().unwrap().iter() {
-                let particle = particles[*p];
-                let grid_cell = grid.get(key).unwrap();
-                unsafe {
-                    let m = grid_cell.mass.as_ptr().as_mut().unwrap();
-                    *m += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2));                
+
+        active_inds.par_iter().for_each(|key| {
+            for neighbor in get_neighbor_gridcells(key, GRID_LENGTHS) {
+                let particle_set = grid_to_particles.get(&neighbor);
+                if particle_set.is_none() {
+                    continue;
+                }
+                for p in particle_set.unwrap().iter() {
+                    let particle = particles[*p];
+                    let grid_cell = grid.get(key).unwrap();
+                    unsafe {
+                        let m = grid_cell.mass.as_ptr().as_mut().unwrap();
+                        *m += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2));                
+                    }
                 }
             }
         }
         );
-        // println!("Time to splat mass: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to splat mass: {:?}", start.elapsed());
+        }
         
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         //velocity
         // for p in particles.iter() {
         //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -445,37 +516,42 @@ fn main() {
         //         }
         //     }
         // }
-        grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
-            for p in particle_set.lock().unwrap().iter() {
-                let particle = particles[*p];
-                let grid_cell = grid.get(key).unwrap();
-                let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
-                let gridcell_mass = grid_cell.mass.get();
-                if grid_cell.affinity {
-                    if grid_cell.distance_sign != particle.tag {
-                        // TODO Possibly sus
-                        // let gridcell_pos = Vector3::new(x as f64, y as f64, z as f64) * GRID_SPACING;
-                        // gridcell.velocity += p.mass
-                        //     * weighting_function(p.position, (x, y, z))
-                        //     * (proj_r(&rigid_body, p.velocity, p.particle_normal, gridcell_pos)
-                        //     + D_INV * p.apic_b * (gridcell_pos - p.position)) / grid_mass;
-                        continue;
-                    }
-                }
-                if gridcell_mass == 0.0 {
+        active_inds.par_iter().for_each(|key| {
+            for neighbors in get_neighbor_gridcells(key, GRID_LENGTHS) {
+                let particle_set = grid_to_particles.get(&neighbors);
+                if particle_set.is_none() {
                     continue;
                 }
-                unsafe {
-                    let v = grid_cell.velocity.as_ptr().as_mut().unwrap();
-                    *v += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2))
-                    * (particle.velocity + D_INV * particle.apic_b * (gridcell_pos - particle.position)) / gridcell_mass;                
+                for p in particle_set.unwrap().iter() {
+                    let particle = particles[*p];
+                    let grid_cell = grid.get(key).unwrap();
+                    let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
+                    let gridcell_mass = grid_cell.mass.get();
+                    if grid_cell.affinity {
+                        if grid_cell.distance_sign != particle.tag {
+                            continue;
+                        }
+                    }
+                    if gridcell_mass == 0.0 {
+                        continue;
+                    }
+                    unsafe {
+                        let v = grid_cell.velocity.as_ptr().as_mut().unwrap();
+                        *v += particle.mass * weighting_function(particle.position, (key.0, key.1, key.2))
+                        * (particle.velocity + D_INV * particle.apic_b * (gridcell_pos - particle.position)) / gridcell_mass;                
+                    }
                 }
             }
         }
         );
-        // println!("Time to splat velocity: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to splat velocity: {:?}", start.elapsed());
+        }
 
         // Calculate the initial particle density
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         if iteration_num == 0 {
             for p in particles.iter_mut() {
                 let mut tot_density = 0.0;
@@ -510,8 +586,13 @@ fn main() {
                 p.density = tot_density;
             }
         }
+        if PRINT_TIMINGS {
+            println!("Time to calculate density: {:?}", start.elapsed());
+        }
         
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         // Grid force calculation using eq 18 from MLS-MPM paper
         // for p in particles.iter() {
         //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -578,29 +659,37 @@ fn main() {
         //     //     panic!();
         //     // }
         // }
-        grid_to_particles.read().unwrap().par_iter().for_each(|(key, particle_set)| {
-            for p in particle_set.lock().unwrap().iter() {
-                let particle = particles[*p];
-                let grid_cell = grid.get(key).unwrap();
-                let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
-                let particle_volume = particle.mass / particle.density;
-                        
-                let m_inv = D_INV;
-                let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
-
-                unsafe {
-                let f = grid_cell.force.as_ptr().as_mut().unwrap();
-                    *f += -weighting_function(particle.position, (key.0, key.1, key.2))
-                        * particle_volume
-                        * m_inv
-                        * partial_psi_partial_f
-                        * (particle.f_e * particle.f_p).transpose()
-                        * (gridcell_pos - particle.position);
+        active_inds.par_iter().for_each(|key| {
+            for neighbor in get_neighbor_gridcells(key, GRID_LENGTHS) {
+                let particle_set = grid_to_particles.get(&neighbor);
+                if particle_set.is_none() {
+                    continue;
+                }
+                for p in particle_set.unwrap().iter() {
+                    let particle = particles[*p];
+                    let grid_cell = grid.get(key).unwrap();
+                    let gridcell_pos = Vector3::new(key.0 as f64, key.1 as f64, key.2 as f64) * GRID_SPACING;
+                    let particle_volume = particle.mass / particle.density;
+                            
+                    let m_inv = D_INV;
+                    let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
+    
+                    unsafe {
+                    let f = grid_cell.force.as_ptr().as_mut().unwrap();
+                        *f += -weighting_function(particle.position, (key.0, key.1, key.2))
+                            * particle_volume
+                            * m_inv
+                            * partial_psi_partial_f
+                            * (particle.f_e * particle.f_p).transpose()
+                            * (gridcell_pos - particle.position);
+                    }
                 }
             }
         }
         );
-        // println!("Time to update grid forces: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to update grid forces: {:?}", start.elapsed());
+        }
         // println!("Grid force of grid[20][17][9]: {}", grid[20][17][9].force);
         // if should_break {
         //     panic!();
@@ -623,7 +712,9 @@ fn main() {
         //         }
         //     }
         // }
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         // let mut gridcells_to_visit: HashSet<(usize, usize, usize)> = HashSet::new();
         // for p in particles.iter() {
         //     let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
@@ -650,28 +741,37 @@ fn main() {
         //         }
         //     }
         // }
-        grid_to_particles.read().unwrap().par_iter().for_each(|((x, y, z), _)| {
-            let gridcell = grid.get(&(*x, *y, *z)).unwrap();
-            if gridcell.mass.get() == 0.0 {
-                
-            }
-            else {
-                let grid_force = gridcell.force.get();
-                let grid_mass = gridcell.mass.get();
-                unsafe {
-                    let v = gridcell.velocity.as_ptr().as_mut().unwrap();
-                    *v += DELTA_T * grid_force / grid_mass;
-                    // Gravity
-                    *v += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+        active_inds.par_iter().for_each(|ind| {
+            for neighbor in get_neighbor_gridcells(ind, GRID_LENGTHS) {
+                let gridcell = grid.get(&neighbor);
+                if gridcell.is_none() {
+                    continue;
+                }
+                let gridcell = gridcell.unwrap();
+                if gridcell.mass.get() == 0.0 {
+                    continue;
+                }
+                else {
+                    let grid_force = gridcell.force.get();
+                    let grid_mass = gridcell.mass.get();
+                    unsafe {
+                        let v = gridcell.velocity.as_ptr().as_mut().unwrap();
+                        *v += DELTA_T * grid_force / grid_mass;
+                        // Gravity
+                        *v += Vector3::new(0.0, 0.0, -9.8) * DELTA_T;
+                    }
                 }
             }
         }
         );
-        // println!("Time to update grid velocities: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to update grid velocities: {:?}", start.elapsed());
+        }
 
         // g2p
-        
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         particles.par_iter_mut().for_each(|p| {
             let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
             // Sum these grid cells in the support of the weighting function
@@ -769,9 +869,13 @@ fn main() {
                 p.apic_b = Matrix3::zeros();
             }
         });
-        // println!("Time to g2p: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to g2p: {:?}", start.elapsed());
+        }
         
-        let start: std::time::Instant = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         // Update particle deformation gradient
         particles.par_iter_mut().for_each(|p| {
             let c_n_plus_1 = p.apic_b * D_INV;
@@ -828,9 +932,13 @@ fn main() {
             p.position += DELTA_T * p.velocity;
             }
         );
-        // println!("Time to update deformation gradients: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to update deformation gradients: {:?}", start.elapsed());
+        }
 
-        let start = std::time::Instant::now();
+        if PRINT_TIMINGS {
+            start = std::time::Instant::now();
+        }
         // Penalty impulse
         for p in particles.iter_mut() {
             if p.particle_distance < 0.0 {
@@ -849,7 +957,9 @@ fn main() {
                     * radius.cross(&rb_impulse);
             }
         }
-        // println!("Time to penalty impulse: {:?}", start.elapsed());
+        if PRINT_TIMINGS {
+            println!("Time to penalty impulse: {:?}", start.elapsed());
+        }
         
         // Adding gravity here... is there better way to do this?
         *tot_change_in_linear_velocity.lock().unwrap() += Vector3::new(0.0, 0.0, -9.8 * DELTA_T);

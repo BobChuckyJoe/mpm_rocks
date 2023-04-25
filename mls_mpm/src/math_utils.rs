@@ -25,6 +25,29 @@ pub fn iterate_over_3x3(start: (usize, usize, usize), grid_lengths: (usize, usiz
     inds
 }
 
+/// Given a grid cell index, get all the neighboring grid cell indices
+/// Includes the base index
+pub fn get_neighbor_gridcells(base_ind: &(usize, usize, usize), grid_lengths: (usize, usize, usize)) -> Vec<(usize, usize, usize)> {
+    let mut neighbors = Vec::new();
+    let (i, j, k) = base_ind;
+    for di in -2..3 {
+        for dj in -2..3 {
+            for dk in -2..3 {
+                let new_i = i.clone() as i32 + di;
+                let new_j = j.clone() as i32 + dj;
+                let new_k = k.clone() as i32 + dk;
+                if (new_i >= 0 && new_i < grid_lengths.0 as i32)
+                    && (new_j >= 0 && new_j < grid_lengths.1 as i32)
+                    && (new_k >= 0 && new_k < grid_lengths.2 as i32)
+                {
+                    neighbors.push((new_i as usize, new_j as usize, new_k as usize));
+                }
+            }
+        }
+    }
+    neighbors
+}
+
 pub fn project_point_into_plane(
     point: Vector3<f64>,
     plane_normal: Vector3<f64>,

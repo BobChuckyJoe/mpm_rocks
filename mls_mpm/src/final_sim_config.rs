@@ -9,9 +9,9 @@ pub const GRID_SPACING: f64 = 0.1;
 pub const GRID_LENGTHS: (usize, usize, usize) = ((SIMULATION_DIMENSIONS.0 as f64 / GRID_SPACING) as usize,
                                                  (SIMULATION_DIMENSIONS.1 as f64 / GRID_SPACING) as usize,
                                                  (SIMULATION_DIMENSIONS.2 as f64 / GRID_SPACING) as usize);
-pub const DELTA_T: f64 = 0.001;
-pub const N_PARTICLES: usize = 1000;
-pub const N_ITERATIONS: usize = 10000;
+pub const DELTA_T: f64 = 0.0001;
+pub const N_PARTICLES: usize = 100000;
+pub const N_ITERATIONS: usize = 100000;
 pub const SOIL_THICCNESS: f64 = 0.5;
 pub const BOUNDARY: f64 = 4.0 * GRID_SPACING; // Particles this close to the boundary have their velocities zeroed out
 pub const DIMENSIONS: usize = 3;
@@ -35,6 +35,7 @@ pub const OUTPUT_GRID_VELOCITIES: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_GRID_AFFINITIES: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_PARTICLE_DEFORMATION_GRADIENT: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_GRID_FORCES: Option<usize> = TIME_TO_SAVE;
+pub const PRINT_TIMINGS: bool = false;
 
 
 pub const top_origin: Vector3<f64> = Vector3::<f64>::new(14.5, 0.0, 6.0);
