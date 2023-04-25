@@ -12,8 +12,8 @@ pub const GRID_LENGTHS: (usize, usize, usize) = (GRID_LENGTH_X, GRID_LENGTH_Y, G
 pub const GRID_SPACING: f64 = SIMULATION_DIMENSIONS.0 / GRID_LENGTH_X as f64;
 
 pub const DELTA_T: f64 = 0.001;
-pub const N_PARTICLES: usize = 1;
-pub const N_ITERATIONS: usize = 10;
+pub const N_PARTICLES: usize = 10000;
+pub const N_ITERATIONS: usize = 10000;
 pub const BOUNDARY: f64 = 4.0 * GRID_SPACING; // Particles this close to the boundary have their velocities zeroed out
 pub const DIMENSIONS: usize = 3;
 

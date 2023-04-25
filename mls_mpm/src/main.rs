@@ -130,8 +130,8 @@ fn main() {
         if PRINT_TIMINGS {
             start = std::time::Instant::now();
         }
-        // let should_save = iteration_num % 20 == 0;
-        let should_save = true;
+        let should_save = iteration_num % 20 == 0;
+        // let should_save = true;
         // let should_save = false;
         // if iteration_num % (0.04 / DELTA_T) as usize == 0 {
         match TIME_TO_SAVE {
@@ -685,7 +685,8 @@ fn main() {
                 }
                 for p in particle_set.unwrap().iter() {
                     let particle = particles[*p];
-                    let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
+                    // let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
+                    let partial_psi_partial_f = neo_hookean_partial_psi_partial_f(particle.f_e * particle.f_p);
                     let particle_volume = particle.mass / particle.density;
                     unsafe {
                         let f = grid_cell.force.as_ptr().as_mut().unwrap();
@@ -695,7 +696,6 @@ fn main() {
                             * partial_psi_partial_f
                             * (particle.f_e * particle.f_p).transpose()
                             * (gridcell_pos - particle.position);
-                        *f = Vector3::zeros();
                     }
                 }
             }
@@ -887,31 +887,32 @@ fn main() {
             // First, assume all of the deformation is elastic
             let f_e_hat_new =
                 (Matrix3::<f64>::identity() + DELTA_T * c_n_plus_1) * p.f_e;
-            let svd = f_e_hat_new.svd(true, true);
-            // Sand plasticity
-            let (new_singular_vals, case, delta_gamma) = project_to_yield_surface(svd, p.alpha);
-            p.f_e = svd.u.unwrap() * new_singular_vals * svd.v_t.unwrap();
-            p.f_p = p.f_e.try_inverse().unwrap() * f_e_hat_new * p.f_p;
-            // Hardening
-            let mut delta_q = 0.0;
-            match case {
-                1 => {
-                    delta_q = 0.0;
-                }
-                2 => {
-                    let epsilon_frob_norm = (new_singular_vals[(0, 0)].ln().powi(2) + new_singular_vals[(1, 1)].ln().powi(2) + new_singular_vals[(2, 2)].ln().powi(2)).sqrt();
-                    delta_q = epsilon_frob_norm;
-                }
-                3 => {
-                    delta_q = delta_gamma;
-                }
-                _ => {
-                    panic!("Invalid case");
-                }
-            }
-            p.q = p.q + delta_q;
-            let phi_f = H_0 + (H_1 * p.q - H_3) * (-H_2 * p.q).exp();
-            p.alpha = (2.0 / 3.0 as f64).sqrt() * (2.0 * phi_f) / (3.0 - phi_f.sin());
+            p.f_e = f_e_hat_new;
+            // let svd = f_e_hat_new.svd(true, true);
+            // // Sand plasticity
+            // let (new_singular_vals, case, delta_gamma) = project_to_yield_surface(svd, p.alpha);
+            // p.f_e = svd.u.unwrap() * new_singular_vals * svd.v_t.unwrap();
+            // p.f_p = p.f_e.try_inverse().unwrap() * f_e_hat_new * p.f_p;
+            // // Hardening
+            // let mut delta_q = 0.0;
+            // match case {
+            //     1 => {
+            //         delta_q = 0.0;
+            //     }
+            //     2 => {
+            //         let epsilon_frob_norm = (new_singular_vals[(0, 0)].ln().powi(2) + new_singular_vals[(1, 1)].ln().powi(2) + new_singular_vals[(2, 2)].ln().powi(2)).sqrt();
+            //         delta_q = epsilon_frob_norm;
+            //     }
+            //     3 => {
+            //         delta_q = delta_gamma;
+            //     }
+            //     _ => {
+            //         panic!("Invalid case");
+            //     }
+            // }
+            // p.q = p.q + delta_q;
+            // let phi_f = H_0 + (H_1 * p.q - H_3) * (-H_2 * p.q).exp();
+            // p.alpha = (2.0 / 3.0 as f64).sqrt() * (2.0 * phi_f) / (3.0 - phi_f.sin());
             // Push excess deformation into the plastic part
             // let f_e_new_svd = f_e_new.svd(true, true);
             // let mut f_e_singular = Matrix3::<f64>::new(
