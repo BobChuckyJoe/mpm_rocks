@@ -45,7 +45,7 @@ impl Gridcell {
     }
 
     pub fn reset_values(&mut self) {
-        self.velocity.get().scale_mut(0.0);
+        self.velocity.get_mut().scale_mut(0.0);
         self.mass = 0.0.into();
         self.force.get_mut().scale_mut(0.0);
         self.unsigned_distance = 1000000.0; // Because, we're doing a min operation, this should be large at first

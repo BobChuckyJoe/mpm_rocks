@@ -26,7 +26,7 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
                 + Vector3::new(
                     SIMULATION_DIMENSIONS.0 / 2.0,
                     SIMULATION_DIMENSIONS.1 / 2.0,
-                    SIMULATION_DIMENSIONS.2 / 2.0, // TODO change this back to center
+                    SIMULATION_DIMENSIONS.2 / 2.0 - 2.0, // TODO change this back to center
                 ),
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
