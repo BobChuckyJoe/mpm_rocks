@@ -153,7 +153,7 @@ fn main() {
         if PRINT_TIMINGS {
             println!("Time to save: {:?}", start.elapsed());
         }
-        
+        rigid_body.position = RIGID_BODY_INITIAL_POSITION;
         // Reset grid
         // for i in 0..GRID_LENGTH {
         //     for j in 0..GRID_LENGTH {
