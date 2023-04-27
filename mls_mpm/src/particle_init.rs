@@ -69,3 +69,7 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
     }
     points
 }
+
+pub fn blanket_particle_init() {
+    
+}

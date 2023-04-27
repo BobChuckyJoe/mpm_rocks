@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufWriter, Write};
 
 use nalgebra::Vector3;
 
@@ -26,7 +26,8 @@ impl FileOutput {
             writeln!(particle_file, "{},{},{}", p.position.x, p.position.y, p.position.z).unwrap();
         }
         // Write rigid body position and orientations to obj files
-        let mut rigid_body_file = File::create(format!("{}/{}.obj", self.output_directory, self.frame_counter)).unwrap();
+        let mut rigid_body_file = BufWriter::new(File::create(format!("{}/{}.obj", self.output_directory, self.frame_counter)).unwrap());
+        
         for l in &self.original_obj_file_string {
             let line_split = l.split(" ").collect::<Vec<_>>();
             if l.starts_with("vn") && line_split.len() == 4 {

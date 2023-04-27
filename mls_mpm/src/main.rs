@@ -6,6 +6,7 @@ mod fileoutput;
 mod math_utils;
 mod obj_loader;
 mod particle_init;
+mod rock_crash_config;
 mod serialize;
 mod tests;
 mod types;
@@ -27,7 +28,7 @@ use tqdm::tqdm;
 // };
 
 /// For swapping out different simulations and different configurations
-use crate::config::*;
+use crate::rock_crash_config::*;
 
 use crate::equations::{
     convert_direction_to_world_coords, convert_to_world_coords, convert_world_coords_to_local,
@@ -103,7 +104,7 @@ fn main() {
         Vec::new(),
     );
     // Write the large data to disk instead of keeping it in memory
-    let mut file_output = FileOutput::new("jello".to_string(), std::fs::read_to_string(RIGID_BODY_PATH).unwrap());
+    let mut file_output = FileOutput::new(FILE_OUTPUT_DIR.to_string(), std::fs::read_to_string(RIGID_BODY_PATH).unwrap());
     // let mut particles: Vec<Particle> = particle_init::uniform_sphere_centered_at_middle(1.5, SAND_DENSITY);
     let mut particles: Vec<Particle> = PARTICLE_INIT_FUNC();
     let mut grid: BTreeMap<(usize, usize, usize), Gridcell> = BTreeMap::new();
@@ -137,16 +138,16 @@ fn main() {
         match TIME_TO_SAVE {
             Some(x) => {
                 if iteration_num == x || should_save {
-                    sim.add_particle_pos(&particles);
-                    sim.add_rigid_body_stuff(&rigid_body);
-                    // file_output.write_frame(&rigid_body, &particles)
+                    // sim.add_particle_pos(&particles);
+                    // sim.add_rigid_body_stuff(&rigid_body);
+                    file_output.write_frame(&rigid_body, &particles)
                 }
             }
             None  => {
                 if should_save{
-                    sim.add_particle_pos(&particles);
-                    sim.add_rigid_body_stuff(&rigid_body);
-                    // file_output.write_frame(&rigid_body, &particles)
+                    // sim.add_particle_pos(&particles);
+                    // sim.add_rigid_body_stuff(&rigid_body);
+                    file_output.write_frame(&rigid_body, &particles)
                 }
             }
         }
@@ -887,33 +888,32 @@ fn main() {
             // First, assume all of the deformation is elastic
             let f_e_hat_new =
                 (Matrix3::<f64>::identity() + DELTA_T * c_n_plus_1) * p.f_e;
-            p.f_e = f_e_hat_new;
-            // let svd = f_e_hat_new.svd(true, true);
+            let svd = f_e_hat_new.svd(true, true);
             // // Sand plasticity
-            // let (new_singular_vals, case, delta_gamma) = project_to_yield_surface(svd, p.alpha);
-            // p.f_e = svd.u.unwrap() * new_singular_vals * svd.v_t.unwrap();
-            // p.f_p = p.f_e.try_inverse().unwrap() * f_e_hat_new * p.f_p;
+            let (new_singular_vals, case, delta_gamma) = project_to_yield_surface(svd, p.alpha);
+            p.f_e = svd.u.unwrap() * new_singular_vals * svd.v_t.unwrap();
+            p.f_p = p.f_e.try_inverse().unwrap() * f_e_hat_new * p.f_p;
             // // Hardening
-            // let mut delta_q = 0.0;
-            // match case {
-            //     1 => {
-            //         delta_q = 0.0;
-            //     }
-            //     2 => {
-            //         let epsilon_frob_norm = (new_singular_vals[(0, 0)].ln().powi(2) + new_singular_vals[(1, 1)].ln().powi(2) + new_singular_vals[(2, 2)].ln().powi(2)).sqrt();
-            //         delta_q = epsilon_frob_norm;
-            //     }
-            //     3 => {
-            //         delta_q = delta_gamma;
-            //     }
-            //     _ => {
-            //         panic!("Invalid case");
-            //     }
-            // }
-            // p.q = p.q + delta_q;
-            // let phi_f = H_0 + (H_1 * p.q - H_3) * (-H_2 * p.q).exp();
-            // p.alpha = (2.0 / 3.0 as f64).sqrt() * (2.0 * phi_f) / (3.0 - phi_f.sin());
-            // Push excess deformation into the plastic part
+            let mut delta_q = 0.0;
+            match case {
+                1 => {
+                    delta_q = 0.0;
+                }
+                2 => {
+                    let epsilon_frob_norm = (new_singular_vals[(0, 0)].ln().powi(2) + new_singular_vals[(1, 1)].ln().powi(2) + new_singular_vals[(2, 2)].ln().powi(2)).sqrt();
+                    delta_q = epsilon_frob_norm;
+                }
+                3 => {
+                    delta_q = delta_gamma;
+                }
+                _ => {
+                    panic!("Invalid case");
+                }
+            }
+            p.q = p.q + delta_q;
+            let phi_f = H_0 + (H_1 * p.q - H_3) * (-H_2 * p.q).exp();
+            p.alpha = (2.0 / 3.0 as f64).sqrt() * (2.0 * phi_f) / (3.0 - phi_f.sin());
+            // Push excess deformation into the plastic part SNOW PLACTICITY
             // let f_e_new_svd = f_e_new.svd(true, true);
             // let mut f_e_singular = Matrix3::<f64>::new(
             //     f_e_new_svd.singular_values[0],
