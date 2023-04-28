@@ -9,9 +9,9 @@ pub const GRID_SPACING: f64 = 0.1;
 pub const GRID_LENGTHS: (usize, usize, usize) = ((SIMULATION_DIMENSIONS.0 as f64 / GRID_SPACING) as usize,
                                                  (SIMULATION_DIMENSIONS.1 as f64 / GRID_SPACING) as usize,
                                                  (SIMULATION_DIMENSIONS.2 as f64 / GRID_SPACING) as usize);
-pub const DELTA_T: f64 = 0.0001;
-pub const N_PARTICLES: usize = 100000;
-pub const N_ITERATIONS: usize = 100000;
+pub const DELTA_T: f64 = 0.001;
+pub const N_PARTICLES: usize = 1000;
+pub const N_ITERATIONS: usize = 100;
 pub const SOIL_THICCNESS: f64 = 3.0;
 pub const BOUNDARY: f64 = 4.0 * GRID_SPACING; // Particles this close to the boundary have their velocities zeroed out
 pub const DIMENSIONS: usize = 3;
@@ -24,12 +24,12 @@ pub const PENALTY_STIFFNESS: f64 = 1e6;
 
 // Rigid body initial state
 pub const RIGID_BODY_PATH: &str = "icosahedron.obj";
-pub const RIGID_BODY_INITIAL_POSITION: Vector3<f64> = Vector3::<f64>::new(5.0, 5.5, 8.0);
-pub const RIGID_BODY_INITIAL_VELOCITY: Vector3<f64> = Vector3::<f64>::new(6.0, 0.0, -10.0);
-pub const RIGID_BODY_INITIAL_ANGULAR_MOMENTUM: Vector3<f64> = Vector3::<f64>::new(0.0, 1000.0, 0.0);
+pub const RIGID_BODY_INITIAL_POSITION: Vector3<f64> = Vector3::<f64>::new(5.0, 5.0, 8.0);
+pub const RIGID_BODY_INITIAL_VELOCITY: Vector3<f64> = Vector3::<f64>::new(0.0, 0.0, 0.0);
+pub const RIGID_BODY_INITIAL_ANGULAR_MOMENTUM: Vector3<f64> = Vector3::<f64>::new(0.0, 100.0, 0.0);
 
 // For output things
-pub const TIME_TO_SAVE: Option<usize> = None;
+pub const TIME_TO_SAVE: Option<usize> = Some(0);
 pub const OUTPUT_GRID_DISTANCES: Option<usize> = TIME_TO_SAVE; // usize is the timestep we want to save
 pub const OUTPUT_GRID_DISTANCE_SIGNS: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_GRID_VELOCITIES: Option<usize> = TIME_TO_SAVE;
@@ -37,7 +37,7 @@ pub const OUTPUT_GRID_AFFINITIES: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_PARTICLE_DEFORMATION_GRADIENT: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_GRID_FORCES: Option<usize> = TIME_TO_SAVE;
 pub const PRINT_TIMINGS: bool = false;
-pub const FILE_OUTPUT_DIR: &str = "rock_crash";
+pub const FILE_OUTPUT_DIR: &str = "rock_crash_small";
 // Give time for sand to settle
 pub fn should_wait(iteration: usize) -> bool {
     iteration < 100000
@@ -61,7 +61,7 @@ pub fn ground_particle_init() -> Vec<Particle>{
             velocity: Vector3::zeros(),    
             apic_b: Matrix3::zeros(),
             mass: per_particle_mass,
-            density: 0.0, // This is set later
+            density: SAND_DENSITY,
             f_e: Matrix3::identity(),
             f_p: Matrix3::identity(),
             affinity: false,

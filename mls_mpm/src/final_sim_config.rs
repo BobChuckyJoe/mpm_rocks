@@ -9,9 +9,9 @@ pub const GRID_SPACING: f64 = 0.1;
 pub const GRID_LENGTHS: (usize, usize, usize) = ((SIMULATION_DIMENSIONS.0 as f64 / GRID_SPACING) as usize,
                                                  (SIMULATION_DIMENSIONS.1 as f64 / GRID_SPACING) as usize,
                                                  (SIMULATION_DIMENSIONS.2 as f64 / GRID_SPACING) as usize);
-pub const DELTA_T: f64 = 0.0001;
-pub const N_PARTICLES: usize = 100000;
-pub const N_ITERATIONS: usize = 100000;
+pub const DELTA_T: f64 = 0.001;
+pub const N_PARTICLES: usize = 10000;
+pub const N_ITERATIONS: usize = 10000;
 pub const SOIL_THICCNESS: f64 = 0.5;
 pub const BOUNDARY: f64 = 4.0 * GRID_SPACING; // Particles this close to the boundary have their velocities zeroed out
 pub const DIMENSIONS: usize = 3;
@@ -37,6 +37,7 @@ pub const OUTPUT_GRID_AFFINITIES: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_PARTICLE_DEFORMATION_GRADIENT: Option<usize> = TIME_TO_SAVE;
 pub const OUTPUT_GRID_FORCES: Option<usize> = TIME_TO_SAVE;
 pub const PRINT_TIMINGS: bool = false;
+pub const FILE_OUTPUT_DIR: &str = "rock_drop_small";
 
 pub const PARTICLE_INIT_FUNC: fn() -> Vec<Particle> = slope_particle_init;
 
@@ -67,7 +68,7 @@ pub fn slope_particle_init() -> Vec<Particle>{
             velocity: Vector3::zeros(),    
             apic_b: Matrix3::zeros(),
             mass: per_particle_mass,
-            density: 0.0, // This is set later
+            density: SAND_DENSITY, // This is set later
             f_e: Matrix3::identity(),
             f_p: Matrix3::identity(),
             affinity: false,
@@ -97,7 +98,7 @@ pub fn slope_particle_init() -> Vec<Particle>{
             velocity: Vector3::zeros(),    
             apic_b: Matrix3::zeros(),
             mass: per_particle_mass,
-            density: 0.0, // This is set later
+            density: SAND_DENSITY, // This is set later
             f_e: Matrix3::identity(),
             f_p: Matrix3::identity(),
             affinity: false,

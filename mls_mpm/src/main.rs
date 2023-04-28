@@ -36,7 +36,7 @@ use crate::equations::{
     grid_cell_ind_to_world_coords, proj_r, weighting_function, calculate_center_of_mass, update_orientation, get_inertia_tensor_world, get_omega,
 };
 use crate::fileoutput::FileOutput;
-// use crate::final_sim_config::is_in_bounds;
+use crate::final_sim_config::is_in_bounds;
 use crate::material_properties::{GRANITE_DENSITY, DIRT_DENSITY, partial_psi_partial_f, CRITICAL_COMPRESSION, CRITICAL_STRETCH, neo_hookean_partial_psi_partial_f, project_to_yield_surface, H_0, H_2, H_3, H_1, sand_partial_psi_partial_f, SAND_DENSITY};
 use crate::obj_loader::load_rigid_body;
 use crate::math_utils::{is_point_in_triangle, iterate_over_3x3, project_point_into_plane, calculate_face_normal, get_neighbor_gridcells};
@@ -138,15 +138,15 @@ fn main() {
         match TIME_TO_SAVE {
             Some(x) => {
                 if iteration_num == x || should_save {
-                    // sim.add_particle_pos(&particles);
-                    // sim.add_rigid_body_stuff(&rigid_body);
+                    sim.add_particle_pos(&particles);
+                    sim.add_rigid_body_stuff(&rigid_body);
                     file_output.write_frame(&rigid_body, &particles)
                 }
             }
             None  => {
                 if should_save{
-                    // sim.add_particle_pos(&particles);
-                    // sim.add_rigid_body_stuff(&rigid_body);
+                    sim.add_particle_pos(&particles);
+                    sim.add_rigid_body_stuff(&rigid_body);
                     file_output.write_frame(&rigid_body, &particles)
                 }
             }
@@ -154,7 +154,7 @@ fn main() {
         if PRINT_TIMINGS {
             println!("Time to save: {:?}", start.elapsed());
         }
-        rigid_body.position = RIGID_BODY_INITIAL_POSITION;
+
         // Reset grid
         // for i in 0..GRID_LENGTH {
         //     for j in 0..GRID_LENGTH {
@@ -567,40 +567,7 @@ fn main() {
         if PRINT_TIMINGS {
             start = std::time::Instant::now();
         }
-        if iteration_num == 0 {
-            for p in particles.iter_mut() {
-                let mut tot_density = 0.0;
-                let base_coord = get_base_grid_ind(&p.position, GRID_SPACING);
-                for dx in -2..3 {
-                    for dy in -2..3 {
-                        for dz in -2..3 {
-                            let x: i64 = base_coord.0 as i64 + dx;
-                            let y: i64 = base_coord.1 as i64 + dy;
-                            let z: i64 = base_coord.2 as i64 + dz;
-                            if x < 0
-                                || x >= GRID_LENGTH_X as i64
-                                || y < 0
-                                || y >= GRID_LENGTH_Y as i64
-                                || z < 0
-                                || z >= GRID_LENGTH_Z as i64
-                            {
-                                continue;
-                            }
-                            let x = x as usize;
-                            let y = y as usize;
-                            let z = z as usize;
-                            let hashmap_ind = (x, y, z);
-                            if grid.get(&hashmap_ind).is_none() {
-                                grid.insert(hashmap_ind, Gridcell::new().into());
-                            }
-                            tot_density += grid.get(&hashmap_ind).unwrap().mass.get()
-                                * weighting_function(p.position, (x, y, z)) / GRID_SPACING.powi(3);
-                        }
-                    }
-                }
-                p.density = tot_density;
-            }
-        }
+
         if PRINT_TIMINGS {
             println!("Time to calculate density: {:?}", start.elapsed());
         }
@@ -687,8 +654,10 @@ fn main() {
                 for p in particle_set.unwrap().iter() {
                     let particle = particles[*p];
                     // let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
-                    let partial_psi_partial_f = neo_hookean_partial_psi_partial_f(particle.f_e * particle.f_p);
+                    let partial_psi_partial_f = sand_partial_psi_partial_f(particle.f_e * particle.f_p);
+                    
                     let particle_volume = particle.mass / particle.density;
+                    
                     unsafe {
                         let f = grid_cell.force.as_ptr().as_mut().unwrap();
                         *f += -weighting_function(particle.position, (key.0, key.1, key.2))
@@ -704,6 +673,9 @@ fn main() {
         );
         if PRINT_TIMINGS {
             println!("Time to update grid forces: {:?}", start.elapsed());
+        }
+        for g in active_inds.iter() {
+            println!("force: {:?}", grid.get(g).unwrap().force);
         }
         
         // Grid velocity update

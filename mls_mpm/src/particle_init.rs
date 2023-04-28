@@ -5,7 +5,7 @@ use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 
 use crate::config::{N_PARTICLES, SIMULATION_DIMENSIONS};
-use crate::material_properties::{H_0, H_1, H_3, H_2};
+use crate::material_properties::{H_0, H_1, H_3, H_2, SAND_DENSITY};
 use crate::types::Particle;
 
 pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Particle> {
@@ -31,7 +31,7 @@ pub fn uniform_sphere_centered_at_middle(radius: f64, density: f64) -> Vec<Parti
             velocity: Vector3::zeros(),
             apic_b: Matrix3::zeros(),
             mass: 1.0,
-            density: 0.0, // This is set later
+            density: SAND_DENSITY, // This is set later
             f_e: Matrix3::identity(),
             f_p: Matrix3::identity(),
             affinity: false,
