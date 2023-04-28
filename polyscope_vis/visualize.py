@@ -8,19 +8,19 @@ import polyscope as ps
 
 from math_utils import *
 
-TIMESTEP = 245
+TIMESTEP = 0
 RENDER_DIST_FIELD = False
 ps.init()
 # Consistent with blender
 ps.set_up_dir("z_up")
 
 # Load the stuff
-with open(os.path.expanduser("~") + "/Downloads/sim.json") as f:
+with open(os.path.expanduser("~") + "/Downloads/working_sim/sim.json") as f:
     sim = json.load(f)
 
 grid_affinities = sim["grid_affinities"]
 grid_distance_signs = sim["grid_distance_signs"]
-grid_length = sim["grid_length"]
+grid_lengths = sim["grid_length"]
 grid_spacing = sim["grid_spacing"]
 num_particles = sim["num_particles"]
 particle_positions = sim["particle_positions"]
@@ -71,9 +71,9 @@ particle_point_cloud.add_vector_quantity("particle_deformation_gradient_z", part
 
 # Generate node points
 points = []
-for i in range(grid_length):
-    for j in range(grid_length):
-        for k in range(grid_length):
+for i in range(grid_lengths[0]):
+    for j in range(grid_lengths[1]):
+        for k in range(grid_lengths[2]):
             points.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 points = np.array(points)
 # print(f"The points: {len(points)}")
@@ -109,9 +109,9 @@ rigid_particle_position_point_cloud.add_vector_quantity("rigid_particle_face_nor
 
 # Grid affinities, which shows which nodes have a valid distance to the rigid body
 grid_affinities_locs = []
-for i in range(grid_length):
-    for j in range(grid_length):
-        for k in range(grid_length):
+for i in range(grid_lengths[0]):
+    for j in range(grid_lengths[1]):
+        for k in range(grid_lengths[2]):
             if grid_affinities[0][i][j][k]:
                 grid_affinities_locs.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(grid_affinities_locs) > 0:
@@ -119,27 +119,27 @@ if len(grid_affinities_locs) > 0:
 
 # Distance signs
 neg_dist = []
-for i in range(grid_length):
-    for j in range(grid_length):
-        for k in range(grid_length):
+for i in range(grid_lengths[0]):
+    for j in range(grid_lengths[1]):
+        for k in range(grid_lengths[2]):
             if grid_distance_signs[0][i][j][k] == -1:
                 neg_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(neg_dist) != 0:
     ps.register_point_cloud("neg_dist", np.array(neg_dist))
 
 pos_dist = []
-for i in range(grid_length):
-    for j in range(grid_length):
-        for k in range(grid_length):
+for i in range(grid_lengths[0]):
+    for j in range(grid_lengths[1]):
+        for k in range(grid_lengths[2]):
             if grid_distance_signs[0][i][j][k] == 1:
                 pos_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(pos_dist) != 0:
     ps.register_point_cloud("pos_dist", np.array(pos_dist))
 
 zero_dist = []
-for i in range(grid_length):
-    for j in range(grid_length):
-        for k in range(grid_length):
+for i in range(grid_lengths[0]):
+    for j in range(grid_lengths[1]):
+        for k in range(grid_lengths[2]):
             if grid_distance_signs[0][i][j][k] == 0:
                 zero_dist.append(np.array([i * grid_spacing, j * grid_spacing, k * grid_spacing]))
 if len(zero_dist) != 0:
@@ -147,7 +147,7 @@ if len(zero_dist) != 0:
 
 if RENDER_DIST_FIELD:
     vals = []
-    for i,j,k in itertools.product(range(grid_length), repeat=3):
+    for i,j,k in itertools.product(range(grid_lengths[0]), repeat=3):
         vals.append(min(3 * grid_spacing, sim["unsigned_distance_field"][TIMESTEP][i][j][k])) 
     vals = np.array(vals)
     print(pd.DataFrame(vals).describe())
@@ -168,9 +168,9 @@ if RENDER_DIST_FIELD:
 
 # Grid velocities
 grid_vels = []
-for i in range(grid_length):
-    for j in range(grid_length):
-        for k in range(grid_length):
+for i in range(grid_lengths[0]):
+    for j in range(grid_lengths[1]):
+        for k in range(grid_lengths[2]):
             grid_v = np.array(sim["grid_velocities"][0][i][j][k])
             if grid_v[0] is None:
                 print(f"Null velocity at {i} {j} {k}")
@@ -185,9 +185,9 @@ ps_cloud.add_vector_quantity("grid_vels", grid_vels, vectortype="ambient")
 
 # Grid forces
 grid_f = []
-for i in range(grid_length):
-    for j in range(grid_length):
-        for k in range(grid_length):
+for i in range(grid_lengths[0]):
+    for j in range(grid_lengths[1]):
+        for k in range(grid_lengths[2]):
             if sim["grid_forces"][0][i][j][k][0] is None:
                 print(f"Null forces at {i} {j} {k}")
                 grid_f.append(np.array([0,10,0]))
